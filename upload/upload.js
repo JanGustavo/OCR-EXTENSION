@@ -1,6 +1,25 @@
 // Importa Tesseract.js como módulo ESM
 import * as TesseractModule from '../assets/tesseract/tesseract.esm.min.js';
 
+// ─── Estado da Aplicação (Memória) ────────────────────────────────────────────
+
+// 1. Criamos um Array com 9 posições (índices de 0 a 8).
+// Cada posição começa com um objeto vazio.
+let passageiros = Array.from({ length: 9 }, () => ({
+  nome: '',
+  cpf: '',
+  dataNascimento: ''
+}));
+
+// 2. Variável que controla qual a aba/slot que o utilizador está a ver agora.
+// Começa no 0 (que corresponde ao Passageiro 1).
+let passageiroAtual = 0;
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+
+
+
 const Tesseract = TesseractModule.Tesseract || TesseractModule.default || TesseractModule;
 
 const dropZone   = document.getElementById('drop-zone');
@@ -8,32 +27,149 @@ const fileInput  = document.getElementById('file-input');
 const previewBox = document.getElementById('preview-box');
 const previewImg = document.getElementById('preview-img');
 const spinner    = document.getElementById('spinner');
-const statusEl   = document.getElementById('status');
 const btnChange  = document.getElementById('btn-change');
+
+// Novos elementos
+const uploadSection  = document.getElementById('upload-section');
+const resultSection  = document.getElementById('result-section');
+const passengerTabs  = document.getElementById('passenger-tabs');
+const fieldNome      = document.getElementById('field-nome');
+const fieldCpf       = document.getElementById('field-cpf');
+const fieldData      = document.getElementById('field-data');
+const btnUploadMore  = document.getElementById('btn-upload-more');
+const btnBack        = document.getElementById('btn-back');
+const btnFinish      = document.getElementById('btn-finish');
+
+// Debug: verificar se elementos foram encontrados
+console.log('[Upload] dropZone:', dropZone);
+console.log('[Upload] fileInput:', fileInput);
+console.log('[Upload] Elements loaded successfully');
 
 let ocrWorker = null; // Tesseract worker instance
 
-dropZone.addEventListener('click', () => fileInput.click());
+// Criar as abas dos passageiros
+function criarAbas() {
+  passengerTabs.innerHTML = '';
+  for (let i = 0; i < 9; i++) {
+    const aba = document.createElement('button');
+    aba.textContent = `P${i + 1}`;
+    aba.className = 'passenger-tab';
+    aba.id = `aba-${i}`;
+    aba.type = 'button';
+    aba.onclick = () => {
+      passageiroAtual = i;
+      renderizarPassageiro(i);
+    };
+    passengerTabs.appendChild(aba);
+  }
+  atualizarAbas();
+}
 
-fileInput.addEventListener('change', (e) => {
-  const file = e.target.files?.[0];
-  if (file) handleFile(file);
-});
+function atualizarAbas() {
+  for (let i = 0; i < 9; i++) {
+    const aba = document.getElementById(`aba-${i}`);
+    const temDados = passageiros[i].nome !== '' || passageiros[i].cpf !== '';
 
-dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer?.files?.[0];
-  if (file) handleFile(file);
-});
+    // Remove classes anteriores
+    aba.classList.remove('active', 'filled');
 
-btnChange.addEventListener('click', () => {
-  previewBox.style.display = 'none';
-  dropZone.style.display = 'block';
-  fileInput.value = '';
-  hideStatus();
+    // Adiciona classe 'active' se for o passageiro atual
+    if (i === passageiroAtual) {
+      aba.classList.add('active');
+    }
+
+    // Adiciona classe 'filled' se o passageiro tiver dados
+    if (temDados) {
+      aba.classList.add('filled');
+    }
+  }
+}
+
+function showSection(sectionId) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('hidden'));
+  // Não esconde nada — deixa ambas as secções visíveis
+}
+
+function hideStatus() {
+  const uploadStatus = document.querySelector('#upload-section #status');
+  if (uploadStatus) uploadStatus.style.display = 'none';
+  
+  const resultStatus = document.querySelector('#result-section #status');
+  if (resultStatus) resultStatus.style.display = 'none';
+}
+
+// ─── Setup dos Event Listeners ───
+function setupEventListeners() {
+  if (!dropZone) {
+    console.error('[Upload] dropZone não encontrado!');
+    return;
+  }
+
+  dropZone.addEventListener('click', () => {
+    console.log('[Upload] Drop-zone clicado');
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      console.log('[Upload] Arquivo selecionado:', file.name);
+      handleFile(file);
+    }
+  });
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('drag-over');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      console.log('[Upload] Arquivo arrastado:', file.name);
+      handleFile(file);
+    }
+  });
+
+  btnChange.addEventListener('click', () => {
+    previewBox.style.display = 'none';
+    dropZone.style.display = 'block';
+    fileInput.value = '';
+    hideStatus();
+  });
+
+  btnBack.addEventListener('click', () => {
+    previewBox.style.display = 'none';
+    dropZone.style.display = 'block';
+    fileInput.value = '';
+    hideStatus();
+  });
+
+  btnUploadMore.addEventListener('click', () => {
+    previewBox.style.display = 'none';
+    dropZone.style.display = 'block';
+    fileInput.value = '';
+    hideStatus();
+  });
+
+  btnFinish.addEventListener('click', () => {
+    finalizarEIrAoFormulario();
+  });
+
+  console.log('[Upload] Event listeners configurados com sucesso');
+}
+
+// ─── Inicializar listeners e abas ao carregar
+window.addEventListener('load', () => {
+  console.log('[Upload] Página carregada, inicializando...');
+  setupEventListeners();
+  criarAbas();
 });
 
 /**
@@ -236,7 +372,7 @@ function handleFile(file) {
 }
 
 /**
- * Processa a imagem: OCR local + parsing + salva resultado
+ * Processa a imagem: OCR local + parsing + guarda no array
  */
 async function processarImagemComOCR(imageDataUrl) {
   try {
@@ -244,8 +380,18 @@ async function processarImagemComOCR(imageDataUrl) {
     const parsedData = await runOCROnImage(imageDataUrl);
     showSpinner(false);
     
-    // Salva e fecha
-    await salvarDados(parsedData);
+    // Simula o recebimento de uma mensagem OCR_RESULT
+    chrome.runtime.onMessage.dispatchEvent = undefined; // Workaround: chamar diretamente
+    
+    // Guarda os dados no array na posição do passageiro atual
+    passageiros[passageiroAtual] = {
+      nome: parsedData.nomeCompleto ?? '',
+      cpf: parsedData.cpf ?? '',
+      dataNascimento: parsedData.dataNascimento ?? ''
+    };
+    
+    // Mostra os dados no ecrã
+    renderizarPassageiro(passageiroAtual);
   } catch (err) {
     console.error('[Upload] Erro ao processar imagem:', err);
     showSpinner(false);
@@ -253,23 +399,119 @@ async function processarImagemComOCR(imageDataUrl) {
   }
 }
 
-/**
- * Salva os dados no chrome.storage.local e fecha a aba
- */
-function salvarDados(data) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ ocrResult: data, ocrPendente: true }, () => {
-      showStatus('✓ Dados salvos! Clique no ícone da extensão para revisar.', 'success');
-      // Fecha após 2s para o usuário ver feedback
-      setTimeout(() => { window.close(); resolve(); }, 2000);
-    });
+// ─── Receber os dados do OCR ──────────────────────────────────────────────────
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'OCR_RESULT') {
+    // Responder imediatamente se não é uma mensagem OCR
+    sendResponse({ handled: false });
+    return false;
+  }
+  
+  showSpinner(false);
+  
+  if (!msg.data) {
+    sendResponse({ ok: false });
+    return showStatus('OCR sem dados. Tente outra imagem.', 'error');
+  }
+
+  // 3. Guardar os dados extraídos no Array, na posição do passageiro atual!
+  const nomeCompleto = msg.data.nomeCompleto ?? '';
+  const nomeParts = nomeCompleto.split(' ');
+  const firstName = nomeParts[0] || '';
+  const lastName = nomeParts.slice(1).join(' ') || '';
+  
+  passageiros[passageiroAtual] = {
+    firstName: firstName,
+    lastName: lastName,
+    cpf: msg.data.cpf ?? '',
+    birthDate: msg.data.dataNascimento ?? '',
+    // Compatibilidade com código antigo
+    nome: nomeCompleto,
+    dataNascimento: msg.data.dataNascimento ?? ''
+  };
+
+  // 4. Mostrar os dados no ecrã
+  renderizarPassageiro(passageiroAtual);
+  
+  // Responder ao offscreen/service-worker
+  sendResponse({ ok: true });
+  return false;
+});
+
+// Nova função que atualiza os inputs com base nos dados do Array
+function renderizarPassageiro(index) {
+  const dados = passageiros[index];
+  
+  fieldNome.value = dados.nome;
+  fieldCpf.value  = dados.cpf;
+  fieldData.value = dados.dataNascimento;
+  
+  // Atualizar seleção da aba
+  atualizarAbas();
+  
+  // Se o passageiro já tiver nome ou CPF preenchido, mostramos mensagem de sucesso
+  if (dados.nome !== '' || dados.cpf !== '') {
+    showStatus(`Passageiro ${index + 1} pronto! Podes rever ou adicionar mais.`, 'success');
+  } else {
+    // Se estiver vazio (ex: quando trocamos para uma aba nova)
+    hideStatus();
+  }
+}
+
+// Finalizar e salvar os dados dos 9 passageiros
+function finalizarEIrAoFormulario() {
+  // Filtrar apenas os passageiros com dados
+  const passageirosPreenchidos = passageiros.filter(p => p.nome !== '' || p.cpf !== '');
+  
+  if (passageirosPreenchidos.length === 0) {
+    showStatus('⚠ Adicione pelo menos um passageiro antes de finalizar.', 'error');
+    return;
+  }
+
+  // Salvar os dados no storage
+  chrome.storage.local.set({ 
+    passageirosOCR: passageirosPreenchidos,
+    ocrCompleted: true 
+  }, () => {
+    console.log('[Upload] Dados salvos no storage:', passageirosPreenchidos);
+    showStatus(`✓ ${passageirosPreenchidos.length} passageiro(s) salvo(s)! Fechando...`, 'success');
+    
+    // Fechar/voltar após 1.5s
+    setTimeout(() => {
+      // Estratégia 1: Se foi aberto como popup, fecha a popup
+      if (window.opener) {
+        window.opener.postMessage({ type: 'OCR_COMPLETED', data: passageirosPreenchidos }, '*');
+        window.close();
+      } 
+      // Estratégia 2: Tenta voltar ao histórico (volta à aba anterior)
+      else if (window.history.length > 1) {
+        // Se há histórico, voltar
+        window.history.back();
+      }
+      // Estratégia 3: Se não há histórico, redirecionar para test-form.html
+      else {
+        window.location.href = '../test-form.html';
+      }
+    }, 1500);
   });
 }
 
 function showSpinner(v) { spinner.style.display = v ? 'flex' : 'none'; }
+
 function showStatus(msg, type) {
-  statusEl.textContent = msg;
-  statusEl.className = type;
-  statusEl.style.display = 'block';
+  // Status da secção de upload
+  const uploadStatus = document.querySelector('#upload-section #status');
+  if (uploadStatus) {
+    uploadStatus.textContent = msg;
+    uploadStatus.className = type;
+    uploadStatus.style.display = 'block';
+  }
+  
+  // Status da secção de resultado
+  const resultStatus = document.querySelector('#result-section #status');
+  if (resultStatus) {
+    resultStatus.textContent = msg;
+    resultStatus.className = type;
+    resultStatus.style.display = 'block';
+  }
 }
-function hideStatus() { statusEl.style.display = 'none'; }

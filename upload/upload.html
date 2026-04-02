@@ -137,6 +137,93 @@
         color: var(--error);
       }
 
+      .section {
+        display: block;
+      }
+      .section.hidden {
+        display: none;
+      }
+
+      #upload-section {
+        margin-bottom: 24px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      #upload-section.hidden {
+        display: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+
+      #result-section input {
+        display: block;
+        width: 100%;
+        margin-bottom: 12px;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+      }
+      #result-section input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      #result-section label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 4px;
+        margin-top: 10px;
+      }
+
+      /* ─── Passenger Tabs Styling ─── */
+      #passenger-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+
+      .passenger-tab {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        height: 44px;
+        padding: 0 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .passenger-tab:hover {
+        border-color: var(--accent);
+        color: var(--text);
+      }
+
+      .passenger-tab.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+        box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+      }
+
+      .passenger-tab.filled::after {
+        content: "✓";
+        margin-left: 4px;
+        font-size: 11px;
+        opacity: 0.8;
+      }
+
       .spinner-wrap {
         display: none;
         flex-direction: column;
@@ -168,28 +255,70 @@
         Selecione ou arraste uma imagem com os dados do passageiro
       </p>
 
-      <div id="drop-zone">
-        <div class="icon">📄</div>
-        <p>Arraste aqui ou clique para escolher</p>
-        <small>PNG, JPG ou WEBP • máx. 5MB</small>
-      </div>
-      <input
-        type="file"
-        id="file-input"
-        accept="image/png,image/jpeg,image/webp"
-      />
+      <!-- ─── Upload Section ─── -->
+      <div id="upload-section" class="section">
+        <div id="drop-zone">
+          <div class="icon">📄</div>
+          <p>Arraste aqui ou clique para escolher</p>
+          <small>PNG, JPG ou WEBP • máx. 5MB</small>
+        </div>
+        <input
+          type="file"
+          id="file-input"
+          accept="image/png,image/jpeg,image/webp"
+        />
 
-      <div id="preview-box">
-        <img id="preview-img" alt="Preview" />
-        <button class="btn btn-secondary" id="btn-change">Trocar imagem</button>
+        <div id="preview-box">
+          <img id="preview-img" alt="Preview" />
+          <button class="btn btn-secondary" id="btn-change">
+            Trocar imagem
+          </button>
+        </div>
+
+        <div class="spinner-wrap" id="spinner">
+          <div class="spinner"></div>
+          <span>Processando OCR...</span>
+        </div>
+
+        <div id="status"></div>
       </div>
 
-      <div class="spinner-wrap" id="spinner">
-        <div class="spinner"></div>
-        <span>Processando OCR...</span>
-      </div>
+      <!-- ─── Result Section ─── -->
+      <div id="result-section" class="section">
+        <div
+          id="passenger-tabs"
+          style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap"
+        >
+          <!-- 9 abas para os 9 passageiros -->
+        </div>
 
-      <div id="status"></div>
+        <label>Nome Completo</label>
+        <input
+          type="text"
+          id="field-nome"
+          placeholder="Primeiro nome e sobrenome"
+        />
+
+        <label>CPF</label>
+        <input type="text" id="field-cpf" placeholder="XXX.XXX.XXX-XX" />
+
+        <label>Data de Nascimento</label>
+        <input type="text" id="field-data" placeholder="DD/MM/YYYY" />
+
+        <button class="btn btn-primary" id="btn-upload-more">
+          + Adicionar outro passageiro
+        </button>
+        <button class="btn btn-secondary" id="btn-back">Voltar</button>
+        <button
+          class="btn btn-primary"
+          id="btn-finish"
+          style="background-color: #22c55e"
+        >
+          ✓ Finalizar e ir ao formulário
+        </button>
+
+        <div id="status"></div>
+      </div>
     </div>
 
     <script src="upload.js" type="module"></script>

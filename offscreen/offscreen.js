@@ -17,13 +17,27 @@
 import Tesseract from '../assets/tesseract/tesseract.esm.min.js';
 
 // ─── Roteador de mensagens ──────────────────────────────────────────────────
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Filtrar apenas mensagens destinadas a este documento
-  if (message.target !== 'offscreen') return;
+  if (message.target !== 'offscreen') {
+    sendResponse({ handled: false });
+    return false;
+  }
 
   if (message.type === 'RUN_OCR') {
-    runOCR(message.imageBase64, message.requestId);
+    // Processar de forma assíncrona e responder quando terminar
+    runOCR(message.imageBase64, message.requestId).then(() => {
+      sendResponse({ ok: true });
+    }).catch((error) => {
+      console.error('[Offscreen] Erro no OCR:', error);
+      sendResponse({ ok: false, error: error.message });
+    });
+    // Retornar true para indicar resposta assíncrona
+    return true;
   }
+  
+  sendResponse({ handled: false });
+  return false;
 });
 
 // ─── Pipeline de OCR ────────────────────────────────────────────────────────

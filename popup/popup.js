@@ -3,11 +3,23 @@ let injectInFlight = false;
 let lastInjectedSignature = '';
 let lastInjectedAt = 0;
 
-// Ao abrir o popup, verifica se há resultado pendente no storage
-chrome.storage.local.get(['ocrResult', 'ocrPendente'], ({ ocrResult, ocrPendente }) => {
-  if (ocrPendente && ocrResult) {
-    mostrarDados(ocrResult);
-    // Limpa o flag de pendente (mantém os dados para reuso)
+// Ao abrir o popup, verifica se há dados OCR no storage (novo fluxo com test-form.html)
+chrome.storage.local.get(['passageirosOCR', 'ocrResult', 'ocrPendente'], (result) => {
+  console.log('[Popup] Storage keys:', result);
+  
+  // Novo fluxo: dados salvos por upload.js em test-form + test-form.js
+  if (result.passageirosOCR && Array.isArray(result.passageirosOCR)) {
+    console.log('[Popup] Encontrados passageiros OCR:', result.passageirosOCR.length);
+    // Preencher com o primeiro passageiro que tem dados
+    const primeiroPreenchido = result.passageirosOCR.find(p => p.nome || p.cpf);
+    if (primeiroPreenchido) {
+      mostrarDados(primeiroPreenchido);
+    }
+  }
+  // Fluxo antigo (compatibilidade)
+  else if (result.ocrPendente && result.ocrResult) {
+    console.log('[Popup] Encontrados dados legacy (ocrResult)');
+    mostrarDados(result.ocrResult);
     chrome.storage.local.set({ ocrPendente: false });
   }
 });
@@ -67,60 +79,91 @@ $('btn-inject').addEventListener('click', async () => {
       return showStatus('Nenhuma aba ativa encontrada.', 'error');
     }
 
-    if (/^(chrome|chrome-extension):\/\//.test(targetTab.url || '')) {
+    const isExtensionPage = /^(chrome|chrome-extension):\/\//.test(targetTab.url || '');
+    
+    if (isExtensionPage && targetTab.url.includes('test-form.html')) {
+      // ─── Para test-form.html (extension page) ───
+      console.log('[Popup] test-form.html detectado, salvando em storage...');
+      
+      // Salvar no storage para que test-form.js leia
+      const dataToSave = {
+        firstName: data.primeiroNome,
+        lastName: data.sobrenome,
+        cpf: data.cpf,
+        birthDate: data.dataNascimento,
+        nome: data.nomeCompleto,
+        dataNascimento: data.dataNascimento
+      };
+      
+      chrome.storage.local.set({ passageirosOCR: [dataToSave] }, () => {
+        console.log('[Popup] Dados salvos no storage para test-form.js');
+        // Enviar postMessage também para reloadear se necessário
+        chrome.tabs.sendMessage(targetTab.id, { 
+          type: 'RELOAD_FROM_STORAGE',
+          data: dataToSave
+        }).catch(err => {
+          console.log('[Popup] test-form.html não respondeu (esperado para extension page)');
+        });
+      });
+      
+      showStatus('✓ Dados salvos no formulário!', 'success');
+    } else if (isExtensionPage) {
       return showStatus('Abra a página do formulário e tente novamente.', 'error');
+    } else {
+      // ─── Para páginas de conteúdo normal ───
+      console.log('[Popup] Injetando em página de conteúdo...');
+      
+      await chrome.scripting.executeScript({
+        target: { tabId: targetTab.id },
+        func: (d) => {
+          window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: d }));
+
+          const setInputValue = (el, value) => {
+            if (!el || value == null || value === '') return false;
+
+            const nativeSetter = Object.getOwnPropertyDescriptor(
+              window.HTMLInputElement.prototype,
+              'value'
+            )?.set;
+
+            if (nativeSetter) {
+              nativeSetter.call(el, value);
+            } else {
+              el.value = value;
+            }
+
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('blur', { bubbles: true }));
+            return true;
+          };
+
+          const nomeCompleto = (d?.nomeCompleto || '').trim();
+          const primeiroNome = (d?.primeiroNome || '').trim();
+          const sobrenome = (d?.sobrenome || '').trim();
+
+          const candidates = {
+            fullName: document.querySelector('#fullName, [name="fullName"], [data-testid="passenger-name"]'),
+            firstName: document.querySelector('#firstName, [name*="firstName"], [name="nome"], [placeholder*="Nome"]'),
+            lastName: document.querySelector('#lastName, [name*="lastName"], [name="sobrenome"], [placeholder*="Sobrenome"]'),
+            cpf: document.querySelector('#cpf, [name*="cpf"], [data-testid="cpf-field"]'),
+            birthDate: document.querySelector('#birthDate, [name*="birthDate"], [data-testid="birthdate"]')
+          };
+
+          setInputValue(candidates.fullName, nomeCompleto);
+          setInputValue(candidates.firstName, primeiroNome);
+          setInputValue(candidates.lastName, sobrenome);
+          setInputValue(candidates.cpf, d?.cpf || '');
+          setInputValue(candidates.birthDate, d?.dataNascimento || '');
+        },
+        args: [data]
+      });
+
+      showStatus('✓ Formulário preenchido com sucesso!', 'success');
     }
-
-    await chrome.scripting.executeScript({
-      target: { tabId: targetTab.id },
-      func: (d) => {
-        window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: d }));
-
-        const setInputValue = (el, value) => {
-          if (!el || value == null || value === '') return false;
-
-          const nativeSetter = Object.getOwnPropertyDescriptor(
-            window.HTMLInputElement.prototype,
-            'value'
-          )?.set;
-
-          if (nativeSetter) {
-            nativeSetter.call(el, value);
-          } else {
-            el.value = value;
-          }
-
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          el.dispatchEvent(new Event('blur', { bubbles: true }));
-          return true;
-        };
-
-        const nomeCompleto = (d?.nomeCompleto || '').trim();
-        const primeiroNome = (d?.primeiroNome || '').trim();
-        const sobrenome = (d?.sobrenome || '').trim();
-
-        const candidates = {
-          fullName: document.querySelector('#fullName, [name="fullName"], [data-testid="passenger-name"]'),
-          firstName: document.querySelector('#firstName, [name*="firstName"], [name="nome"], [placeholder*="Nome"]'),
-          lastName: document.querySelector('#lastName, [name*="lastName"], [name="sobrenome"], [placeholder*="Sobrenome"]'),
-          cpf: document.querySelector('#cpf, [name*="cpf"], [data-testid="cpf-field"]'),
-          birthDate: document.querySelector('#birthDate, [name*="birthDate"], [data-testid="birthdate"]')
-        };
-
-        setInputValue(candidates.fullName, nomeCompleto);
-        setInputValue(candidates.firstName, primeiroNome);
-        setInputValue(candidates.lastName, sobrenome);
-        setInputValue(candidates.cpf, d?.cpf || '');
-        setInputValue(candidates.birthDate, d?.dataNascimento || '');
-      },
-      args: [data]
-    });
 
     lastInjectedSignature = signature;
     lastInjectedAt = Date.now();
-    
-    showStatus('✓ Formulário preenchido com sucesso!', 'success');
   } catch (err) {
     console.error('Erro na injeção:', err);
     showStatus('Falha ao se comunicar com a aba do formulário.', 'error');
