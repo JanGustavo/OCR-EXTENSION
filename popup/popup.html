@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>OCR AutoFill</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="logo">✈</span>
+      <h1>OCR AutoFill</h1>
+    </header>
+
+    <main>
+      <section id="upload-section">
+        <div id="drop-zone">
+          <span class="drop-icon">📄</span>
+          <p>Arraste uma imagem aqui</p>
+          <small>PNG, JPG ou WEBP • máx. 5MB</small>
+
+          <!--
+          TÉCNICA DEFINITIVA para popup MV3:
+          O próprio <input type="file"> é estilizado como botão via CSS.
+          Nenhum label, nenhum .click() via JS — o usuário clica diretamente.
+          Isso evita o bug do Chrome que fecha o popup quando JS tenta
+          abrir o file picker programaticamente.
+        -->
+          <input
+            type="file"
+            id="file-btn"
+            accept="image/png,image/jpeg,image/webp"
+            class="file-btn"
+          />
+        </div>
+      </section>
+
+      <section id="preview-section" class="hidden">
+        <img id="image-preview" alt="Preview" />
+        <button id="btn-change" class="btn-secondary">Trocar imagem</button>
+      </section>
+
+      <section id="result-section" class="hidden">
+        <h2>Dados Extraídos</h2>
+
+        <div class="field-group">
+          <label for="field-nome">Nome completo</label>
+          <input
+            type="text"
+            id="field-nome"
+            placeholder="Nome extraído do documento"
+          />
+        </div>
+
+        <div class="field-group">
+          <label for="field-cpf">CPF</label>
+          <input
+            type="text"
+            id="field-cpf"
+            placeholder="000.000.000-00"
+            maxlength="14"
+          />
+        </div>
+
+        <div class="field-group">
+          <label for="field-data">Data de nascimento</label>
+          <input
+            type="text"
+            id="field-data"
+            placeholder="DD/MM/AAAA"
+            maxlength="10"
+          />
+        </div>
+
+        <button id="btn-inject" class="btn-primary">
+          Preencher formulário
+        </button>
+      </section>
+
+      <div id="status-bar" class="hidden"></div>
+
+      <div id="loading" class="hidden">
+        <div class="spinner"></div>
+        <p>Processando OCR...</p>
+      </div>
+    </main>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
