@@ -13,8 +13,12 @@
 
   "host_permissions": [
     "https://*.latam.com/*",
+    "https://*.latamairlines.com/*",
     "https://*.gol.com.br/*",
+    "https://*.voegol.com.br/*",
+    "https://*.smiles.com.br/*",
     "https://*.azul.com.br/*",
+    "https://*.voeazul.com.br/*",
     "file:///*"
   ],
 
@@ -32,11 +36,21 @@
     {
       "matches": [
         "https://*.latam.com/*",
+        "https://*.latamairlines.com/*",
         "https://*.gol.com.br/*",
+        "https://*.voegol.com.br/*",
+        "https://*.smiles.com.br/*",
         "https://*.azul.com.br/*",
+        "https://*.voeazul.com.br/*",
         "file:///*"
       ],
-      "js": ["content/injector.js"],
+      "js": [
+        "content/providers/gol-smiles.js",
+        "content/providers/latam.js",
+        "content/providers/azul.js",
+        "content/injector.js"
+      ],
+      "all_frames": true,
       "run_at": "document_idle"
     }
   ],

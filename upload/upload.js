@@ -39,6 +39,8 @@ const fieldData      = document.getElementById('field-data');
 const btnUploadMore  = document.getElementById('btn-upload-more');
 const btnBack        = document.getElementById('btn-back');
 const btnFinish      = document.getElementById('btn-finish');
+const urlParams      = new URLSearchParams(window.location.search);
+const targetTabId    = Number.parseInt(urlParams.get('targetTabId') || '', 10);
 
 // Debug: verificar se elementos foram encontrados
 console.log('[Upload] dropZone:', dropZone);
@@ -460,8 +462,24 @@ function renderizarPassageiro(index) {
 
 // Finalizar e salvar os dados dos 9 passageiros
 function finalizarEIrAoFormulario() {
-  // Filtrar apenas os passageiros com dados
-  const passageirosPreenchidos = passageiros.filter(p => p.nome !== '' || p.cpf !== '');
+  // Filtrar apenas os passageiros com dados e normalizar formato
+  const passageirosPreenchidos = passageiros
+    .filter((p) => p.nome !== '' || p.cpf !== '' || p.firstName || p.lastName)
+    .map((p) => {
+      const nomeCompleto = (p.nome || `${p.firstName || ''} ${p.lastName || ''}`.trim()).trim();
+      const nomeParts = nomeCompleto.split(/\s+/).filter(Boolean);
+      const firstName = p.firstName || nomeParts[0] || '';
+      const lastName = p.lastName || nomeParts.slice(1).join(' ') || '';
+
+      return {
+        nome: nomeCompleto,
+        firstName,
+        lastName,
+        cpf: p.cpf || '',
+        dataNascimento: p.dataNascimento || p.birthDate || '',
+        birthDate: p.birthDate || p.dataNascimento || ''
+      };
+    });
   
   if (passageirosPreenchidos.length === 0) {
     showStatus('⚠ Adicione pelo menos um passageiro antes de finalizar.', 'error');
@@ -474,25 +492,44 @@ function finalizarEIrAoFormulario() {
     ocrCompleted: true 
   }, () => {
     console.log('[Upload] Dados salvos no storage:', passageirosPreenchidos);
-    showStatus(`✓ ${passageirosPreenchidos.length} passageiro(s) salvo(s)! Fechando...`, 'success');
+    showStatus(`✓ ${passageirosPreenchidos.length} passageiro(s) salvo(s)! Enviando para a aba...`, 'success');
     
-    // Fechar/voltar após 1.5s
+    // Fechar/voltar após 1.2s
     setTimeout(() => {
-      // Estratégia 1: Se foi aberto como popup, fecha a popup
-      if (window.opener) {
-        window.opener.postMessage({ type: 'OCR_COMPLETED', data: passageirosPreenchidos }, '*');
-        window.close();
-      } 
-      // Estratégia 2: Tenta voltar ao histórico (volta à aba anterior)
-      else if (window.history.length > 1) {
-        // Se há histórico, voltar
-        window.history.back();
+      // Estratégia 1: Injetar diretamente na aba de origem (site real)
+      if (Number.isInteger(targetTabId)) {
+        chrome.scripting.executeScript({
+          target: { tabId: targetTabId, allFrames: true },
+          func: (dadosPassageiros) => {
+            window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: dadosPassageiros }));
+          },
+          args: [passageirosPreenchidos]
+        }, () => {
+          if (chrome.runtime.lastError) {
+            console.error('[Upload] Falha ao injetar na aba alvo:', chrome.runtime.lastError.message);
+            showStatus('Falha ao enviar para a aba do site. Tente novamente.', 'error');
+            return;
+          }
+
+          chrome.tabs.update(targetTabId, { active: true });
+          chrome.tabs.getCurrent((currentTab) => {
+            if (currentTab?.id) {
+              chrome.tabs.remove(currentTab.id);
+            } else {
+              window.close();
+            }
+          });
+        });
+        return;
       }
-      // Estratégia 3: Se não há histórico, redirecionar para test-form.html
-      else {
+
+      // Estratégia 2: fallback legado (somente quando não há aba alvo)
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
         window.location.href = '../test-form.html';
       }
-    }, 1500);
+    }, 1200);
   });
 }
 

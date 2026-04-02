@@ -114,7 +114,7 @@ $('btn-inject').addEventListener('click', async () => {
       console.log('[Popup] Injetando em página de conteúdo...');
       
       await chrome.scripting.executeScript({
-        target: { tabId: targetTab.id },
+        target: { tabId: targetTab.id, allFrames: true },
         func: (d) => {
           window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: d }));
 

@@ -14,61 +14,64 @@
  *  reconheça o novo valor como legítimo e habilite o botão de continuar.
  */
 
-// ─── Mapa de seletores por companhia ───────────────────────────────────────
-// Cada companhia tem diferentes atributos e estruturas de formulário.
-// A estratégia de prioridade: data-testid > aria-label > name > placeholder
-const SELECTORS = {
-  'latam.com': {
-    nome:           '[data-testid="passenger-name"], [name*="firstName"], [aria-label*="nome"]',
-    sobrenome:      '[data-testid="passenger-lastname"], [name*="lastName"]',
-    cpf:            '[data-testid="cpf-field"], [name*="cpf"], [aria-label*="CPF"]',
-    dataNascimento: '[data-testid="birthdate"], [name*="birthDate"], [aria-label*="nascimento"]'
-  },
-  'gol.com.br': {
-    nome:           '[name="firstName"], [placeholder*="Nome"]',
-    sobrenome:      '[name="lastName"], [placeholder*="Sobrenome"]',
-    cpf:            '[name="cpf"], [placeholder*="CPF"]',
-    dataNascimento: '[name="birthday"], [placeholder*="DD/MM/AAAA"]'
-  },
-  'azul.com.br': {
-    nome:           '[formcontrolname="firstName"], [placeholder*="Nome"]',
-    sobrenome:      '[formcontrolname="lastName"]',
-    cpf:            '[formcontrolname="cpf"], [aria-label*="CPF"]',
-    dataNascimento: '[formcontrolname="birthday"], [formcontrolname="dateOfBirth"]'
-  }
-};
+function getProviderForCurrentUrl() {
+  const providers = Object.values(window.OCRProviders || {});
+  const hostname = window.location.hostname;
+  return providers.find((provider) => provider.supports(hostname)) || null;
+}
 
 // ─── Inicialização ──────────────────────────────────────────────────────────
 
 // Escuta o evento disparado pelo Service Worker via chrome.scripting.executeScript
 window.addEventListener('OCR_AUTOFILL', (event) => {
-  const data = event.detail;
-  if (!data) return console.warn('[Injector] Dados de OCR ausentes.');
+  const payload = event.detail;
+  if (!payload) return console.warn('[Injector] Dados de OCR ausentes.');
 
-  const domain = getDomain();
-  const selectors = SELECTORS[domain];
+  const passageiros = Array.isArray(payload) ? payload : [payload];
+  iniciarInjecao(passageiros);
+});
 
-  if (!selectors) {
-    console.warn(`[Injector] Domínio não mapeado: ${domain}`);
+// ─── MOTOR DE INJEÇÃO MODULAR ────────────────────────────────────────────────
+
+// Função principal que será injetada na página atual
+function iniciarInjecao(passageiros) {
+  const provider = getProviderForCurrentUrl();
+
+  if (!provider) {
+    alert('Site de companhia aérea não reconhecido pelo OCR.');
     return;
   }
 
-  fillForm(data, selectors);
-});
+  console.log(`[OCR] Provider detectado: ${provider.id}. Iniciando módulo...`);
+
+  if (typeof provider.inject === 'function') {
+    provider.inject(passageiros, {
+      fillForm,
+      highlightFilledFields,
+      fillField
+    });
+    return;
+  }
+
+  // Fallback para providers ainda sem motor dedicado
+  const primeiroPassageiro = passageiros.find((p) => p && (p.nome || p.firstName || p.cpf || p.dataNascimento || p.birthDate));
+  if (!primeiroPassageiro) {
+    console.warn('[Injector] Nenhum passageiro com dados para injeção.');
+    return;
+  }
+
+  fillForm(primeiroPassageiro, provider.selectors, provider.id);
+}
 
 // ─── Lógica de preenchimento ────────────────────────────────────────────────
-
-function getDomain() {
-  const hostname = window.location.hostname;
-  return Object.keys(SELECTORS).find(d => hostname.includes(d)) || null;
-}
 
 /**
  * Preenche o formulário com os dados extraídos pelo OCR.
  * @param {{ nomeCompleto: string, primeiroNome: string, sobrenome: string, cpf: string, dataNascimento: string }} data
- * @param {Object} selectors - Mapa de seletores para o domínio atual
+ * @param {Object} selectors - Mapa de seletores para o provider atual
+ * @param {string} providerId
  */
-function fillForm(data, selectors) {
+function fillForm(data, selectors, providerId) {
   // Usa os campos separados se disponíveis, caso contrário faz fallback de separação
   let nome = data.primeiroNome || '';
   let sobrenome = data.sobrenome || '';
@@ -106,7 +109,7 @@ function fillForm(data, selectors) {
     if (filled) successCount++;
   }
 
-  console.info(`[Injector] ${successCount} campo(s) preenchido(s).`);
+  console.info(`[Injector:${providerId}] ${successCount} campo(s) preenchido(s).`);
   highlightFilledFields();
 }
 
@@ -131,6 +134,8 @@ function fillField(element, value) {
     } else {
       element.value = value; // fallback para campos simples
     }
+
+    element.dataset.ocrFilled = 'true';
 
     // Dispara eventos que frameworks reativos escutam para detectar mudanças
     element.dispatchEvent(new Event('input',  { bubbles: true }));
