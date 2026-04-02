@@ -65,17 +65,27 @@ function getDomain() {
 
 /**
  * Preenche o formulário com os dados extraídos pelo OCR.
- * @param {{ nome: string, cpf: string, dataNascimento: string }} data
+ * @param {{ nomeCompleto: string, primeiroNome: string, sobrenome: string, cpf: string, dataNascimento: string }} data
  * @param {Object} selectors - Mapa de seletores para o domínio atual
  */
 function fillForm(data, selectors) {
-  // Separa nome e sobrenome (assume última palavra como sobrenome)
-  const nomeParts = (data.nome || '').split(' ');
-  const sobrenome = nomeParts.length > 1 ? nomeParts.pop() : '';
-  const nome = nomeParts.join(' ');
+  // Usa os campos separados se disponíveis, caso contrário faz fallback de separação
+  let nome = data.primeiroNome || '';
+  let sobrenome = data.sobrenome || '';
+  
+  // Fallback: se não temos campos separados, tenta separar do nomeCompleto
+  if (!nome && data.nomeCompleto) {
+    const palavras = (data.nomeCompleto || '').trim().split(/\s+/);
+    if (palavras.length > 1) {
+      sobrenome = palavras[palavras.length - 1];
+      nome = palavras.slice(0, -1).join(' ');
+    } else {
+      nome = data.nomeCompleto;
+    }
+  }
 
   const fillMap = {
-    nome,
+    nome: nome || data.nome,
     sobrenome,
     cpf: data.cpf,
     dataNascimento: data.dataNascimento
