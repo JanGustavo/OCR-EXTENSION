@@ -8,7 +8,8 @@
     "activeTab",
     "scripting",
     "storage",
-    "offscreen"
+    "offscreen",
+    "tabs"
   ],
 
   "host_permissions": [
@@ -25,12 +26,7 @@
 
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "OCR AutoFill",
-    "default_icon": {
-      "16":  "assets/icons/icon16.png",
-      "48":  "assets/icons/icon48.png",
-      "128": "assets/icons/icon128.png"
-    }
+    "default_title": "OCR AutoFill"
   },
 
   "content_scripts": [
@@ -52,7 +48,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["offscreen/offscreen.html"],
+      "resources": ["offscreen/offscreen.html", "upload/upload.html"],
       "matches": ["<all_urls>"]
     }
   ]

@@ -24,11 +24,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // mantém o canal aberto para resposta assíncrona
   }
 
-  if (message.type === 'START_OCR_FILE') {
-    handleOCRFlowFromFile(message.file, sendResponse);
-    return true;
-  }
-
   if (message.type === 'OCR_RESULT') {
     // Mensagem vinda do offscreen.js com os dados extraídos
     handleInjection(message.data, sender, sendResponse);
@@ -60,32 +55,6 @@ async function handleOCRFlow(imageBase64, sendResponse) {
 
   } catch (error) {
     console.error('[SW] Erro ao iniciar OCR:', error);
-    sendResponse({ ok: false, error: error.message });
-  }
-}
-
-async function handleOCRFlowFromFile(file, sendResponse) {
-  try {
-    if (!file) throw new Error('Arquivo inválido ou não serializável. Envie imageBase64 em vez de File.');
-
-    if (!file?.type?.startsWith('image/')) {
-      throw new Error('Arquivo inválido ou não serializável. Envie imageBase64 em vez de File.');
-    }
-
-    await ensureOffscreenDocument();
-
-    const buffer = await file.arrayBuffer();
-    const imageBase64 = toDataUrl(buffer, file.type || 'image/png');
-
-    chrome.runtime.sendMessage({
-      type: 'RUN_OCR',
-      imageBase64,
-      target: 'offscreen'
-    });
-
-    sendResponse({ ok: true, status: 'OCR iniciado' });
-  } catch (error) {
-    console.error('[SW] Erro ao iniciar OCR a partir do arquivo:', error);
     sendResponse({ ok: false, error: error.message });
   }
 }
@@ -128,17 +97,4 @@ async function handleInjection(data, _sender, sendResponse) {
 function injectDataIntoPage(data) {
   // Delegar ao content script via CustomEvent (se injector.js estiver carregado)
   window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: data }));
-}
-
-function toDataUrl(buffer, mimeType) {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunkSize = 0x8000;
-
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return `data:${mimeType};base64,${btoa(binary)}`;
 }

@@ -1,262 +1,284 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <title>Formulário de Teste — OCR AutoFill</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  <head>
+    <meta charset="UTF-8" />
+    <title>Formulário de Teste — OCR AutoFill</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-    :root {
-      --bg: #f1f5f9;
-      --white: #ffffff;
-      --border: #cbd5e1;
-      --accent: #6366f1;
-      --text: #1e293b;
-      --muted: #64748b;
-      --success: #22c55e;
-      --radius: 10px;
-    }
+      :root {
+        --bg: #f1f5f9;
+        --white: #ffffff;
+        --border: #cbd5e1;
+        --accent: #6366f1;
+        --text: #1e293b;
+        --muted: #64748b;
+        --success: #22c55e;
+        --radius: 10px;
+      }
 
-    body {
-      background: var(--bg);
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding: 40px 16px;
-    }
+      body {
+        background: var(--bg);
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 40px 16px;
+      }
 
-    .card {
-      background: var(--white);
-      border-radius: 16px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-      padding: 36px;
-      width: 100%;
-      max-width: 520px;
-    }
+      .card {
+        background: var(--white);
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        padding: 36px;
+        width: 100%;
+        max-width: 520px;
+      }
 
-    .badge {
-      display: inline-block;
-      background: rgba(99,102,241,0.1);
-      color: var(--accent);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      padding: 4px 10px;
-      border-radius: 99px;
-      margin-bottom: 12px;
-    }
+      .badge {
+        display: inline-block;
+        background: rgba(99, 102, 241, 0.1);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border-radius: 99px;
+        margin-bottom: 12px;
+      }
 
-    h1 {
-      font-size: 22px;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
+      h1 {
+        font-size: 22px;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
 
-    .subtitle {
-      color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 28px;
-    }
+      .subtitle {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 28px;
+      }
 
-    .section-title {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 14px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--border);
-    }
+      .section-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 14px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+      }
 
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 14px;
-    }
-    .row.full { grid-template-columns: 1fr; }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+      .row.full {
+        grid-template-columns: 1fr;
+      }
 
-    .field { display: flex; flex-direction: column; gap: 5px; }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
 
-    label {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--muted);
-    }
+      label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
 
-    input {
-      border: 1.5px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 14px;
-      color: var(--text);
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      background: #fff;
-    }
+      input {
+        border: 1.5px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 14px;
+        color: var(--text);
+        outline: none;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+        background: #fff;
+      }
 
-    input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
-    }
+      input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+      }
 
-    /* Highlight aplicado pelo injector.js */
-    input.ocr-autofill-highlight {
-      border-color: var(--success) !important;
-      box-shadow: 0 0 0 3px rgba(34,197,94,0.15) !important;
-      background: rgba(34,197,94,0.04) !important;
-    }
+      /* Highlight aplicado pelo injector.js */
+      input.ocr-autofill-highlight {
+        border-color: var(--success) !important;
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15) !important;
+        background: rgba(34, 197, 94, 0.04) !important;
+      }
 
-    .btn-submit {
-      width: 100%;
-      padding: 12px;
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: var(--radius);
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-      margin-top: 24px;
-      transition: opacity 0.2s;
-    }
-    .btn-submit:hover { opacity: 0.88; }
+      .btn-submit {
+        width: 100%;
+        padding: 12px;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: var(--radius);
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 24px;
+        transition: opacity 0.2s;
+      }
+      .btn-submit:hover {
+        opacity: 0.88;
+      }
 
-    .hint {
-      margin-top: 20px;
-      padding: 12px 14px;
-      background: rgba(99,102,241,0.06);
-      border-left: 3px solid var(--accent);
-      border-radius: 6px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.6;
-    }
-    .hint strong { color: var(--accent); }
+      .hint {
+        margin-top: 20px;
+        padding: 12px 14px;
+        background: rgba(99, 102, 241, 0.06);
+        border-left: 3px solid var(--accent);
+        border-radius: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .hint strong {
+        color: var(--accent);
+      }
 
-    .status {
-      display: none;
-      margin-top: 16px;
-      padding: 12px 14px;
-      background: rgba(34,197,94,0.1);
-      color: #15803d;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      text-align: center;
-    }
-  </style>
-</head>
-<body>
+      .status {
+        display: none;
+        margin-top: 16px;
+        padding: 12px 14px;
+        background: rgba(34, 197, 94, 0.1);
+        color: #15803d;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <span class="badge">✈ Simulador de Formulário</span>
+      <h1>Dados do Passageiro</h1>
+      <p class="subtitle">
+        Formulário de teste para a extensão OCR AutoFill. Os campos abaixo
+        simulam o checkout de companhias aéreas brasileiras.
+      </p>
 
-<div class="card">
+      <p class="section-title">Identificação pessoal</p>
 
-  <span class="badge">✈ Simulador de Formulário</span>
-  <h1>Dados do Passageiro</h1>
-  <p class="subtitle">Formulário de teste para a extensão OCR AutoFill. Os campos abaixo simulam o checkout de companhias aéreas brasileiras.</p>
+      <!-- Nome e Sobrenome — seletores usados pelo injector.js -->
+      <div class="row">
+        <div class="field">
+          <label for="firstName">Nome</label>
+          <input
+            type="text"
+            id="firstName"
+            name="firstName"
+            data-testid="passenger-name"
+            placeholder="Ex: João"
+            autocomplete="off"
+          />
+        </div>
+        <div class="field">
+          <label for="lastName">Sobrenome</label>
+          <input
+            type="text"
+            id="lastName"
+            name="lastName"
+            data-testid="passenger-lastname"
+            placeholder="Ex: Silva"
+            autocomplete="off"
+          />
+        </div>
+      </div>
 
-  <p class="section-title">Identificação pessoal</p>
+      <!-- CPF -->
+      <div class="row full">
+        <div class="field">
+          <label for="cpf">CPF</label>
+          <input
+            type="text"
+            id="cpf"
+            name="cpf"
+            data-testid="cpf-field"
+            aria-label="CPF"
+            placeholder="000.000.000-00"
+            maxlength="14"
+            autocomplete="off"
+          />
+        </div>
+      </div>
 
-  <!-- Nome e Sobrenome — seletores usados pelo injector.js -->
-  <div class="row">
-    <div class="field">
-      <label for="firstName">Nome</label>
-      <input
-        type="text"
-        id="firstName"
-        name="firstName"
-        data-testid="passenger-name"
-        placeholder="Ex: João"
-        autocomplete="off"
-      />
+      <!-- Data de nascimento -->
+      <div class="row full">
+        <div class="field">
+          <label for="birthDate">Data de nascimento</label>
+          <input
+            type="text"
+            id="birthDate"
+            name="birthDate"
+            data-testid="birthdate"
+            aria-label="Data de nascimento"
+            placeholder="DD/MM/AAAA"
+            maxlength="10"
+            autocomplete="off"
+          />
+        </div>
+      </div>
+
+      <p class="section-title" style="margin-top: 24px">Contato</p>
+
+      <div class="row">
+        <div class="field">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" placeholder="email@exemplo.com" />
+        </div>
+        <div class="field">
+          <label for="phone">Telefone</label>
+          <input type="tel" id="phone" placeholder="(00) 00000-0000" />
+        </div>
+      </div>
+
+      <button class="btn-submit" onclick="handleSubmit()">
+        Confirmar dados
+      </button>
+
+      <div class="hint">
+        <strong>Como testar:</strong> abra a extensão OCR AutoFill, faça upload
+        de uma imagem com nome, CPF e data de nascimento visíveis, e clique em
+        <strong>"Preencher formulário"</strong>. Os campos acima serão
+        preenchidos automaticamente.
+      </div>
+
+      <div class="status" id="status">
+        ✓ Formulário enviado com sucesso! (simulação)
+      </div>
     </div>
-    <div class="field">
-      <label for="lastName">Sobrenome</label>
-      <input
-        type="text"
-        id="lastName"
-        name="lastName"
-        data-testid="passenger-lastname"
-        placeholder="Ex: Silva"
-        autocomplete="off"
-      />
-    </div>
-  </div>
 
-  <!-- CPF -->
-  <div class="row full">
-    <div class="field">
-      <label for="cpf">CPF</label>
-      <input
-        type="text"
-        id="cpf"
-        name="cpf"
-        data-testid="cpf-field"
-        aria-label="CPF"
-        placeholder="000.000.000-00"
-        maxlength="14"
-        autocomplete="off"
-      />
-    </div>
-  </div>
+    <script>
+      // Escuta o evento disparado pelo injector.js
+      window.addEventListener("OCR_AUTOFILL", (e) => {
+        console.log("[Test Form] Dados recebidos via OCR_AUTOFILL:", e.detail);
+      });
 
-  <!-- Data de nascimento -->
-  <div class="row full">
-    <div class="field">
-      <label for="birthDate">Data de nascimento</label>
-      <input
-        type="text"
-        id="birthDate"
-        name="birthDate"
-        data-testid="birthdate"
-        aria-label="Data de nascimento"
-        placeholder="DD/MM/AAAA"
-        maxlength="10"
-        autocomplete="off"
-      />
-    </div>
-  </div>
-
-  <p class="section-title" style="margin-top:24px;">Contato</p>
-
-  <div class="row">
-    <div class="field">
-      <label for="email">E-mail</label>
-      <input type="email" id="email" placeholder="email@exemplo.com" />
-    </div>
-    <div class="field">
-      <label for="phone">Telefone</label>
-      <input type="tel" id="phone" placeholder="(00) 00000-0000" />
-    </div>
-  </div>
-
-  <button class="btn-submit" onclick="handleSubmit()">Confirmar dados</button>
-
-  <div class="hint">
-    <strong>Como testar:</strong> abra a extensão OCR AutoFill, faça upload de uma imagem com nome, CPF e data de nascimento visíveis, e clique em <strong>"Preencher formulário"</strong>. Os campos acima serão preenchidos automaticamente.
-  </div>
-
-  <div class="status" id="status">
-    ✓ Formulário enviado com sucesso! (simulação)
-  </div>
-
-</div>
-
-<script>
-  // Escuta o evento disparado pelo injector.js
-  window.addEventListener('OCR_AUTOFILL', (e) => {
-    console.log('[Test Form] Dados recebidos via OCR_AUTOFILL:', e.detail);
-  });
-
-  function handleSubmit() {
-    document.getElementById('status').style.display = 'block';
-  }
-</script>
-
-</body>
+      function handleSubmit() {
+        document.getElementById("status").style.display = "block";
+      }
+    </script>
+  </body>
 </html>
