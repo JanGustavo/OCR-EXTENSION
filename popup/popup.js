@@ -43,6 +43,30 @@ $('btn-open-upload').addEventListener('click', async () => {
   }
 });
 
+// Limpa os dados do último OCR para reiniciar o fluxo
+$('btn-clear-ocr').addEventListener('click', () => {
+  chrome.storage.local.remove(['passageirosOCR', 'ocrResult', 'ocrPendente', 'ocrCompleted'], () => {
+    if (chrome.runtime.lastError) {
+      console.error('[Popup] Erro ao limpar OCR:', chrome.runtime.lastError.message);
+      showStatus('Falha ao limpar dados do OCR.', 'error');
+      return;
+    }
+
+    $('field-nome').value = '';
+    $('field-sobrenome').value = '';
+    $('field-cpf').value = '';
+    $('field-data').value = '';
+
+    $('result-section').classList.add('hidden');
+    $('upload-section').classList.remove('hidden');
+
+    lastInjectedSignature = '';
+    lastInjectedAt = 0;
+
+    showStatus('Último OCR limpo. Você já pode iniciar um novo.', 'success');
+  });
+});
+
 // Injeção na aba ativa
 // ─── Injeção ──────────────────────────────────────────────────────────────────
 $('btn-inject').addEventListener('click', async () => {

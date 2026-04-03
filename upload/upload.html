@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <title>OCR AutoFill — Selecionar imagem</title>
+    <title>OCR Passagens — Selecionar imagem</title>
     <style>
       *,
       *::before,
@@ -119,6 +119,14 @@
         background: var(--surface);
         border: 1px solid var(--border);
         color: var(--muted);
+      }
+      .btn-danger {
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: var(--error);
+      }
+      .btn-danger:hover {
+        background: rgba(239, 68, 68, 0.22);
       }
 
       #status {
@@ -260,7 +268,7 @@
   </head>
   <body>
     <div class="card">
-      <h1>✈ OCR AutoFill</h1>
+      <h1>✈ OCR Passagens</h1>
       <p class="sub">
         Selecione ou arraste uma imagem com os dados do passageiro
       </p>
@@ -348,6 +356,9 @@
           + Adicionar outro passageiro
         </button>
         <button class="btn btn-secondary" id="btn-back">Voltar</button>
+        <button class="btn btn-danger" id="btn-clear-passenger">
+          🗑 Limpar passageiro atual
+        </button>
         <button
           class="btn btn-primary"
           id="btn-finish"

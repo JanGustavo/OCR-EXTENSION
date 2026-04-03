@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "OCR AutoFill — Passagens Aéreas",
+  "name": "OCR Passagens — AutoFill",
   "version": "1.0.0",
   "description": "Extrai dados pessoais via OCR e injeta automaticamente em formulários de companhias aéreas brasileiras.",
 
@@ -29,7 +29,18 @@
 
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "OCR AutoFill"
+    "default_title": "OCR Passagens",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
   },
 
   "content_scripts": [

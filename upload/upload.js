@@ -41,6 +41,7 @@ const fieldData      = document.getElementById('field-data');
 const btnUploadMore    = document.getElementById('btn-upload-more');
 const btnBack          = document.getElementById('btn-back');
 const btnFinish        = document.getElementById('btn-finish');
+const btnClearPassenger = document.getElementById('btn-clear-passenger'); // NOVO
 const fieldGenero      = document.getElementById('field-genero');       // CORRIGIDO: novo campo
 const fieldNacionalidade = document.getElementById('field-nacionalidade'); // CORRIGIDO: novo campo
 const urlParams      = new URLSearchParams(window.location.search);
@@ -167,6 +168,13 @@ function setupEventListeners() {
   btnFinish.addEventListener('click', () => {
     finalizarEIrAoFormulario();
   });
+
+  // NOVO: limpar passageiro atual
+  if (btnClearPassenger) {
+    btnClearPassenger.addEventListener('click', () => {
+      limparPassageiroAtual();
+    });
+  }
 
   // CORRIGIDO: sincroniza selects de gênero e nacionalidade com o array em tempo real
   if (fieldGenero) {
@@ -489,6 +497,38 @@ function renderizarPassageiro(index) {
     // Se estiver vazio (ex: quando trocamos para uma aba nova)
     hideStatus();
   }
+}
+
+// ─── Limpar passageiro atual ──────────────────────────────────────────────────
+
+function limparPassageiroAtual() {
+  passageiros[passageiroAtual] = {
+    nome: '',
+    firstName: '',
+    lastName: '',
+    cpf: '',
+    dataNascimento: '',
+    birthDate: '',
+    genero: '',
+    gender: '',
+    nacionalidade: 'Brasileira',
+    nationality: 'Brasileira'
+  };
+
+  // Limpa os campos visuais
+  fieldNome.value = '';
+  fieldCpf.value  = '';
+  fieldData.value = '';
+  if (fieldGenero)        fieldGenero.value        = '';
+  if (fieldNacionalidade) fieldNacionalidade.value = 'Brasileira';
+
+  // Volta a mostrar a zona de upload
+  previewBox.style.display = 'none';
+  dropZone.style.display   = 'block';
+  fileInput.value          = '';
+
+  atualizarAbas();
+  hideStatus();
 }
 
 // Finalizar e salvar os dados dos 9 passageiros
