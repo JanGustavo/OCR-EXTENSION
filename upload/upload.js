@@ -8,7 +8,9 @@ import * as TesseractModule from '../assets/tesseract/tesseract.esm.min.js';
 let passageiros = Array.from({ length: 9 }, () => ({
   nome: '',
   cpf: '',
-  dataNascimento: ''
+  dataNascimento: '',
+  genero: '',          // CORRIGIDO: adicionado para o select da Azul
+  nacionalidade: 'Brasileira' // CORRIGIDO: padrão Brasileira
 }));
 
 // 2. Variável que controla qual a aba/slot que o utilizador está a ver agora.
@@ -36,9 +38,11 @@ const passengerTabs  = document.getElementById('passenger-tabs');
 const fieldNome      = document.getElementById('field-nome');
 const fieldCpf       = document.getElementById('field-cpf');
 const fieldData      = document.getElementById('field-data');
-const btnUploadMore  = document.getElementById('btn-upload-more');
-const btnBack        = document.getElementById('btn-back');
-const btnFinish      = document.getElementById('btn-finish');
+const btnUploadMore    = document.getElementById('btn-upload-more');
+const btnBack          = document.getElementById('btn-back');
+const btnFinish        = document.getElementById('btn-finish');
+const fieldGenero      = document.getElementById('field-genero');       // CORRIGIDO: novo campo
+const fieldNacionalidade = document.getElementById('field-nacionalidade'); // CORRIGIDO: novo campo
 const urlParams      = new URLSearchParams(window.location.search);
 const targetTabId    = Number.parseInt(urlParams.get('targetTabId') || '', 10);
 
@@ -163,6 +167,20 @@ function setupEventListeners() {
   btnFinish.addEventListener('click', () => {
     finalizarEIrAoFormulario();
   });
+
+  // CORRIGIDO: sincroniza selects de gênero e nacionalidade com o array em tempo real
+  if (fieldGenero) {
+    fieldGenero.addEventListener('change', () => {
+      passageiros[passageiroAtual].genero  = fieldGenero.value;
+      passageiros[passageiroAtual].gender  = fieldGenero.value;
+    });
+  }
+  if (fieldNacionalidade) {
+    fieldNacionalidade.addEventListener('change', () => {
+      passageiros[passageiroAtual].nacionalidade = fieldNacionalidade.value;
+      passageiros[passageiroAtual].nationality   = fieldNacionalidade.value;
+    });
+  }
 
   console.log('[Upload] Event listeners configurados com sucesso');
 }
@@ -386,10 +404,16 @@ async function processarImagemComOCR(imageDataUrl) {
     chrome.runtime.onMessage.dispatchEvent = undefined; // Workaround: chamar diretamente
     
     // Guarda os dados no array na posição do passageiro atual
+    // CORRIGIDO: preserva genero e nacionalidade que o usuário pode ter editado manualmente
     passageiros[passageiroAtual] = {
       nome: parsedData.nomeCompleto ?? '',
+      firstName: parsedData.primeiroNome ?? '',
+      lastName: parsedData.sobrenome ?? '',
       cpf: parsedData.cpf ?? '',
-      dataNascimento: parsedData.dataNascimento ?? ''
+      dataNascimento: parsedData.dataNascimento ?? '',
+      birthDate: parsedData.dataNascimento ?? '',
+      genero: passageiros[passageiroAtual].genero || '',
+      nacionalidade: passageiros[passageiroAtual].nacionalidade || 'Brasileira'
     };
     
     // Mostra os dados no ecrã
@@ -429,7 +453,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     birthDate: msg.data.dataNascimento ?? '',
     // Compatibilidade com código antigo
     nome: nomeCompleto,
-    dataNascimento: msg.data.dataNascimento ?? ''
+    dataNascimento: msg.data.dataNascimento ?? '',
+    // CORRIGIDO: preserva genero e nacionalidade que o usuário pode ter editado
+    genero: passageiros[passageiroAtual].genero || '',
+    nacionalidade: passageiros[passageiroAtual].nacionalidade || 'Brasileira'
   };
 
   // 4. Mostrar os dados no ecrã
@@ -444,9 +471,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 function renderizarPassageiro(index) {
   const dados = passageiros[index];
   
-  fieldNome.value = dados.nome;
-  fieldCpf.value  = dados.cpf;
-  fieldData.value = dados.dataNascimento;
+  fieldNome.value = dados.nome || '';
+  fieldCpf.value  = dados.cpf  || '';
+  fieldData.value = dados.dataNascimento || '';
+
+  // CORRIGIDO: sincroniza os novos campos com o estado do passageiro
+  if (fieldGenero)        fieldGenero.value        = dados.genero       || '';
+  if (fieldNacionalidade) fieldNacionalidade.value = dados.nacionalidade || 'Brasileira';
   
   // Atualizar seleção da aba
   atualizarAbas();
@@ -469,7 +500,11 @@ function finalizarEIrAoFormulario() {
       const nomeCompleto = (p.nome || `${p.firstName || ''} ${p.lastName || ''}`.trim()).trim();
       const nomeParts = nomeCompleto.split(/\s+/).filter(Boolean);
       const firstName = p.firstName || nomeParts[0] || '';
-      const lastName = p.lastName || nomeParts.slice(1).join(' ') || '';
+      const lastName  = p.lastName  || nomeParts.slice(1).join(' ') || '';
+
+      // CORRIGIDO: lê genero e nacionalidade dos selects antes de salvar
+      const generoAtual       = fieldGenero       ? fieldGenero.value        : (p.genero       || '');
+      const nacionalidadeAtual = fieldNacionalidade ? fieldNacionalidade.value : (p.nacionalidade || 'Brasileira');
 
       return {
         nome: nomeCompleto,
@@ -477,7 +512,11 @@ function finalizarEIrAoFormulario() {
         lastName,
         cpf: p.cpf || '',
         dataNascimento: p.dataNascimento || p.birthDate || '',
-        birthDate: p.birthDate || p.dataNascimento || ''
+        birthDate:      p.birthDate      || p.dataNascimento || '',
+        genero:         generoAtual,
+        gender:         generoAtual,       // alias para compatibilidade com azul.js
+        nacionalidade:  nacionalidadeAtual,
+        nationality:    nacionalidadeAtual  // alias para compatibilidade com azul.js
       };
     });
   

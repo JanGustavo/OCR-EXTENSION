@@ -149,7 +149,6 @@
         padding-bottom: 24px;
         border-bottom: 1px solid var(--border);
       }
-
       #upload-section.hidden {
         display: none;
         margin-bottom: 0;
@@ -157,7 +156,8 @@
         border-bottom: none;
       }
 
-      #result-section input {
+      #result-section input,
+      #result-section select {
         display: block;
         width: 100%;
         margin-bottom: 12px;
@@ -168,9 +168,15 @@
         color: var(--text);
         font-size: 14px;
       }
-      #result-section input:focus {
+      #result-section input:focus,
+      #result-section select:focus {
         outline: none;
         border-color: var(--accent);
+      }
+      /* Cor dos options no select escuro */
+      #result-section select option {
+        background: var(--surface);
+        color: var(--text);
       }
       #result-section label {
         display: block;
@@ -180,14 +186,13 @@
         margin-top: 10px;
       }
 
-      /* ─── Passenger Tabs Styling ─── */
+      /* ─── Passenger Tabs ─── */
       #passenger-tabs {
         display: flex;
         gap: 6px;
         margin-bottom: 20px;
         flex-wrap: wrap;
       }
-
       .passenger-tab {
         display: flex;
         align-items: center;
@@ -204,19 +209,16 @@
         cursor: pointer;
         transition: all 0.2s ease;
       }
-
       .passenger-tab:hover {
         border-color: var(--accent);
         color: var(--text);
       }
-
       .passenger-tab.active {
         background: var(--accent);
         color: #fff;
         border-color: var(--accent);
         box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
       }
-
       .passenger-tab.filled::after {
         content: "✓";
         margin-left: 4px;
@@ -245,6 +247,14 @@
         to {
           transform: rotate(360deg);
         }
+      }
+
+      /* Badge de campos opcionais */
+      .optional-badge {
+        font-size: 10px;
+        color: var(--muted);
+        font-weight: 400;
+        margin-left: 4px;
       }
     </style>
   </head>
@@ -289,7 +299,7 @@
           id="passenger-tabs"
           style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap"
         >
-          <!-- 9 abas para os 9 passageiros -->
+          <!-- Abas geradas por JS -->
         </div>
 
         <label>Nome Completo</label>
@@ -304,6 +314,35 @@
 
         <label>Data de Nascimento</label>
         <input type="text" id="field-data" placeholder="DD/MM/YYYY" />
+
+        <!--
+          CAMPOS ADICIONADOS — Gênero e Nacionalidade
+          Eram a causa do react-select de gênero nunca ser preenchido,
+          pois o valor nunca chegava via storage.
+        -->
+        <label>
+          Gênero
+          <span class="optional-badge"
+            >(opcional — preenche o select da Azul)</span
+          >
+        </label>
+        <select id="field-genero">
+          <option value="">Não informar</option>
+          <option value="Masculino">Masculino</option>
+          <option value="Feminino">Feminino</option>
+        </select>
+
+        <label>
+          Nacionalidade
+          <span class="optional-badge">(padrão: Brasileira)</span>
+        </label>
+        <select id="field-nacionalidade">
+          <option value="Brasileira">Brasileira</option>
+          <option value="Americana">Americana</option>
+          <option value="Portuguesa">Portuguesa</option>
+          <option value="Argentina">Argentina</option>
+          <option value="Outra">Outra</option>
+        </select>
 
         <button class="btn btn-primary" id="btn-upload-more">
           + Adicionar outro passageiro
