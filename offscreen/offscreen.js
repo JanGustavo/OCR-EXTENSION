@@ -241,42 +241,112 @@ function parsePassengerData(text) {
   };
 }
 
-function sanitizeNomeCandidate(candidate) {
-  if (!candidate) return null;
+/**
+ * Limpa o texto candidato a nome e remove termos indesejados (Blacklist)
+ */
+function sanitizeNomeCandidate(text) {
+  if (!text) return null;
 
-  const cleaned = candidate
-    .replace(/\b(NOME|NAME|PASSAGEIRO|TITULAR|COMPLETO)\b/g, ' ')
-    .replace(/\b(CPF|DATA|NASC(?:IMENTO)?|NATURALIDADE|RG|DOC(?:UMENTO)?)\b.*$/g, '')
+  const raw = String(text).toUpperCase().replace(/\s+/g, ' ').trim();
+
+  const institucionalTokens = [
+    'REPUBLICA', 'FEDERATIVA', 'BRASIL', 'GOVERNO', 'FEDERAL', 'ESTADO', 'SECRETARIA',
+    'SEGURANCA', 'DEFESA', 'SOCIAL', 'POLICIA', 'CARTEIRA', 'IDENTIDADE', 'REGISTRO',
+    'GERAL', 'DEPARTAMENTO', 'TRANSITO', 'SSP', 'DETRAN', 'MINISTERIO', 'ORGAO', 'EMISSOR'
+  ];
+
+  const institutionalScore = institucionalTokens.reduce((acc, token) => (
+    acc + (new RegExp(`\\b${token}\\b`).test(raw) ? 1 : 0)
+  ), 0);
+
+  // Evita capturar cabeçalhos como "GOVERNO FEDERAL ESTADO DA PARAIBA"
+  if (institutionalScore >= 2) return null;
+
+  // 1. Mantém apenas letras e espaços
+  let cleanText = raw
+    .replace(/[^A-Z\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  const words = cleaned.split(' ').filter(Boolean);
-  if (words.length < 2 || words.length > 6) return null;
-  return cleaned;
-}
+  // 2. 🛑 LISTA NEGRA TURBINADA: Destrói cabeçalhos de RG e CNH
+  const blacklist = [
+    'VALIDADE', 'VALIDA', 'EXPEDICAO', 'DATA', 'NASCIMENTO', 'CPF', 'RG', 'DOC',
+    'SSP', 'DETRAN', 'MINISTERIO', 'REPUBLICA', 'FEDERATIVA', 'BRASIL', 'UF',
+    'CARTEIRA', 'NACIONAL', 'HABILITACAO', 'IDENTIDADE', 'REGISTRO', 'GERAL',
+    'NATURALIDADE', 'ASSINATURA', 'TITULAR', 'PASSAPORTE', 'NOME', 'EMISSAO',
+    'LOCAL', 'FILIACAO', 'PAI', 'MAE', 'ORGAO', 'EMISSOR',
+    // --- NOVIDADES ---
+    'GOVERNO', 'FEDERAL', 'ESTADO', 'SECRETARIA', 'SEGURANCA', 'PUBLICA', 
+    'DEFESA', 'SOCIAL', 'POLICIA', 'CIVIL', 'DEPARTAMENTO', 'TRANSITO',
+    'VALIDO', 'TODO', 'TERRITORIO', 'LEI', 'VIA'
+  ];
 
+  // 3. Remove as palavras da blacklist do candidato a nome
+  blacklist.forEach(word => {
+    // Usa \b para garantir que só remove a palavra inteira
+    const regex = new RegExp(`\\b${word}\\b`, 'g');
+    cleanText = cleanText.replace(regex, '');
+  });
+
+  cleanText = cleanText.replace(/\s+/g, ' ').trim();
+
+  // 4. Validação final: nome com ao menos duas palavras "fortes"
+  const parts = cleanText.split(' ');
+  if (parts.length < 2 || cleanText.length <= 5) return null;
+
+  const connectors = new Set(['DA', 'DE', 'DO', 'DAS', 'DOS', 'E']);
+  const strongWords = parts.filter((w) => !connectors.has(w) && w.length >= 2);
+  if (strongWords.length < 2) return null;
+
+  return cleanText;
+
+  // Reprova se sobrar apenas estado/localidade ou estrutura institucional
+}
+/**
+ * Extrai o nome do passageiro caçando indicadores chave
+ */
 function extractNome(text) {
+  const textUpper = text.toUpperCase();
+
+  // 1. Procura com delimitadores diretos no texto corrido
+  // Ex: "NOME: JOAO DA SILVA DATA..." -> Extrai "JOAO DA SILVA"
   const patterns = [
-    /(?:NOME(?:\s+COMPLETO)?|NAME|PASSAGEIRO|TITULAR)[:\s]*([A-Z][A-Z\s]{3,90}?)(?=\s+(?:CPF|DATA|NASC|NATURALIDADE|RG|DOC)|$)/,
-    /^([A-Z]{2,}(?:\s[A-Z]{2,}){1,5})$/m
+    /(?:NOME(?:\s+COMPLETO)?|NAME|PASSAGEIRO|TITULAR)[:\s]+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s]{3,90}?)(?=\s+(?:CPF|DATA|NASC|NAT|RG|DOC|VAL|EXP|ASSINATURA|EMISSAO|$))/
   ];
 
   for (const pattern of patterns) {
-    const match = text.match(pattern);
+    const match = textUpper.match(pattern);
     const candidate = sanitizeNomeCandidate(match?.[1]);
     if (candidate) return candidate;
   }
 
-  const lines = text
+  // 2. Separa o OCR linha por linha para análise estrutural
+  const lines = textUpper
     .split(/\n+/)
     .map((line) => line.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
+  // 3. Estratégia de Proximidade: Procura a palavra "NOME"
   for (let i = 0; i < lines.length; i++) {
-    if (/\bNOME\b/.test(lines[i])) {
-      const candidate = sanitizeNomeCandidate(lines[i + 1] || lines[i]);
-      if (candidate) return candidate;
+    if (/\b(?:NOME|NAME)\b/.test(lines[i])) {
+      const nearbyCandidates = [
+        lines[i].replace(/.*\b(?:NOME|NAME)\b[:\s]*/g, ' ').trim(),
+        lines[i + 1] || '',
+        lines[i + 2] || ''
+      ];
+
+      for (const item of nearbyCandidates) {
+        const candidate = sanitizeNomeCandidate(item);
+        if (candidate) return candidate;
+      }
     }
+  }
+
+  // 4. Último Recurso (Fallback): Passa todas as linhas no filtro
+  // A primeira linha que sobrar inteira, com duas palavras, sem ser da blacklist, é assumida como o nome.
+  for (let i = 0; i < lines.length; i++) {
+    const candidate = sanitizeNomeCandidate(lines[i]);
+    if (candidate) return candidate;
   }
 
   return null;

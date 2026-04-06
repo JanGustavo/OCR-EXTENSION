@@ -431,22 +431,42 @@ function separateNome(nomeCompleto) {
 function sanitizeNomeCandidate(candidate) {
   if (!candidate) return null;
 
-  const cleaned = candidate
-    .replace(/\b(NOME|NAME|PASSAGEIRO|TITULAR|COMPLETO)\b/g, ' ')
+  const raw = String(candidate).toUpperCase().replace(/\s+/g, ' ').trim();
+  const institucionalTokens = [
+    'REPUBLICA', 'FEDERATIVA', 'BRASIL', 'GOVERNO', 'FEDERAL', 'ESTADO', 'SECRETARIA',
+    'SEGURANCA', 'DEFESA', 'SOCIAL', 'POLICIA', 'CARTEIRA', 'IDENTIDADE', 'REGISTRO',
+    'GERAL', 'DEPARTAMENTO', 'TRANSITO', 'SSP', 'DETRAN', 'MINISTERIO', 'ORGAO', 'EMISSOR'
+  ];
+
+  const institutionalScore = institucionalTokens.reduce((acc, token) => (
+    acc + (new RegExp(`\\b${token}\\b`).test(raw) ? 1 : 0)
+  ), 0);
+
+  // Evita capturar cabeçalhos como "GOVERNO FEDERAL ESTADO DA PARAIBA"
+  if (institutionalScore >= 2) return null;
+
+  const cleaned = raw
+    .replace(/\b(NOME|NAME|PASSAGEIRO|TITULAR|COMPLETO|NOME\s+SOCIAL|SOCIAL\s+NAME)\b/g, ' ')
     .replace(/\b(FOTO|PHOTO|FOTOGRAFIA|ASSINATURA)\b.*$/g, '')
-    .replace(/\b(CPF|DATA|NASC(?:IMENTO)?|NATURALIDADE|RG|DOC(?:UMENTO)?)\b.*$/g, '')
+    .replace(/\b(CPF|DATA|NASC(?:IMENTO)?|NATURALIDADE|RG|DOC(?:UMENTO)?|VALIDADE|EMISSAO)\b.*$/g, '')
+    .replace(/[^A-Z\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
   const words = cleaned.split(' ').filter(Boolean);
   if (words.length < 2 || words.length > 6) return null;
+
+  // Nome precisa ter pelo menos 2 palavras "fortes" (não conectores)
+  const connectors = new Set(['DA', 'DE', 'DO', 'DAS', 'DOS', 'E']);
+  const strongWords = words.filter((w) => !connectors.has(w) && w.length >= 2);
+  if (strongWords.length < 2) return null;
+
   return cleaned;
 }
 
 function extractNome(text) {
   const patterns = [
-    /(?:NOME(?:\s+COMPLETO)?|NAME|PASSAGEIRO|TITULAR)[:\s]*([A-Z][A-Z\s]{3,90}?)(?=\s+(?:CPF|DATA|NASC|NATURALIDADE|RG|DOC)|$)/,
-    /^([A-Z]{2,}(?:\s[A-Z]{2,}){1,5})$/m
+    /(?:NOME(?:\s+COMPLETO)?|NAME|PASSAGEIRO|TITULAR)[:\s]*([A-Z][A-Z\s]{3,90}?)(?=\s+(?:CPF|DATA|NASC|NATURALIDADE|RG|DOC|VALIDADE|EMISSAO)|$)/
   ];
 
   for (const pattern of patterns) {
@@ -461,10 +481,25 @@ function extractNome(text) {
     .filter(Boolean);
 
   for (let i = 0; i < lines.length; i++) {
-    if (/\bNOME\b/.test(lines[i])) {
-      const candidate = sanitizeNomeCandidate(lines[i + 1] || lines[i]);
-      if (candidate) return candidate;
+    if (/\b(?:NOME|NAME)\b/.test(lines[i])) {
+      // Prioriza linhas próximas ao marcador "Nome / Name"
+      const nearbyCandidates = [
+        lines[i].replace(/.*\b(?:NOME|NAME)\b[:\s]*/g, ' ').trim(),
+        lines[i + 1] || '',
+        lines[i + 2] || ''
+      ];
+
+      for (const item of nearbyCandidates) {
+        const candidate = sanitizeNomeCandidate(item);
+        if (candidate) return candidate;
+      }
     }
+  }
+
+  // Fallback: aceita a primeira linha plausível que não seja institucional
+  for (const line of lines) {
+    const candidate = sanitizeNomeCandidate(line);
+    if (candidate) return candidate;
   }
 
   return null;
