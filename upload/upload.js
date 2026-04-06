@@ -1,7 +1,39 @@
 // Importa Tesseract.js como módulo ESM
 import * as TesseractModule from '../assets/tesseract/tesseract.esm.min.js';
 
+const urlParams = new URLSearchParams(window.location.search);
+const targetTabId = Number.parseInt(urlParams.get('targetTabId') || '', 10);
+
 // ─── Estado da Aplicação (Memória) ────────────────────────────────────────────
+
+// 2. Variável que controla qual a aba/slot que o utilizador está a ver agora.
+// Começa no 0 (que corresponde ao Passageiro 1).
+let passageiroAtual = 0;
+
+const providerKey = (urlParams.get('provider') || 'azul').toLowerCase();
+const providerConfigMap = {
+  azul: {
+    title: 'OCR Passagens — Azul',
+    heading: '✈ OCR Passagens Azul',
+    generoHint: '(opcional — preenche o select da Azul)',
+    nationality: 'Brasil'
+  },
+  latam: {
+    title: 'OCR Passagens — LATAM',
+    heading: '✈ OCR Passagens LATAM',
+    generoHint: '(opcional — preenche o select da LATAM)',
+    nationality: 'Brasil'
+  },
+  smiles: {
+    title: 'OCR Passagens — Smiles',
+    heading: '✈ OCR Passagens Smiles',
+    generoHint: '(opcional — preenche o select da Smiles)',
+    nationality: 'Brasil'
+  }
+};
+
+const providerConfig = providerConfigMap[providerKey] || providerConfigMap.azul;
+const DEFAULT_NATIONALITY = providerConfig.nationality;
 
 // 1. Criamos um Array com 9 posições (índices de 0 a 8).
 // Cada posição começa com um objeto vazio.
@@ -10,13 +42,9 @@ let passageiros = Array.from({ length: 9 }, () => ({
   cpf: '',
   dataNascimento: '',
   genero: '',          // CORRIGIDO: adicionado para o select da Azul
-  nacionalidade: 'Brasil', // CORRIGIDO: padrão Brasil
+  nacionalidade: DEFAULT_NATIONALITY, // CORRIGIDO: padrão do provedor atual
   imagemDataUrl: ''
 }));
-
-// 2. Variável que controla qual a aba/slot que o utilizador está a ver agora.
-// Começa no 0 (que corresponde ao Passageiro 1).
-let passageiroAtual = 0;
 
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -31,6 +59,8 @@ const previewBox = document.getElementById('preview-box');
 const previewImg = document.getElementById('preview-img');
 const spinner    = document.getElementById('spinner');
 const btnChange  = document.getElementById('btn-change');
+const pageHeading = document.getElementById('page-heading');
+const generoHint = document.getElementById('genero-hint');
 
 // Novos elementos
 const uploadSection  = document.getElementById('upload-section');
@@ -47,8 +77,6 @@ const btnFinish        = document.getElementById('btn-finish');
 const btnClearPassenger = document.getElementById('btn-clear-passenger'); // NOVO
 const fieldGenero      = document.getElementById('field-genero');       // CORRIGIDO: novo campo
 const fieldNacionalidade = document.getElementById('field-nacionalidade'); // CORRIGIDO: novo campo
-const urlParams      = new URLSearchParams(window.location.search);
-const targetTabId    = Number.parseInt(urlParams.get('targetTabId') || '', 10);
 
 // Debug: verificar se elementos foram encontrados
 console.log('[Upload] dropZone:', dropZone);
@@ -59,6 +87,7 @@ let ocrWorker = null; // Tesseract worker instance
 
 // Criar as abas dos passageiros
 function criarAbas() {
+  aplicarConfiguracaoDoProvedor();
   atualizarAbas();
   renderizarResumoPassageiros();
 }
@@ -70,6 +99,18 @@ function atualizarAbas() {
 function showSection(sectionId) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('hidden'));
   // Não esconde nada — deixa ambas as secções visíveis
+}
+
+function aplicarConfiguracaoDoProvedor() {
+  document.title = providerConfig.title;
+
+  if (pageHeading) {
+    pageHeading.textContent = providerConfig.heading;
+  }
+
+  if (generoHint) {
+    generoHint.textContent = providerConfig.generoHint;
+  }
 }
 
 function hideStatus() {
@@ -411,7 +452,7 @@ async function processarImagemComOCR(imageDataUrl, passageiroIndex = passageiroA
       dataNascimento: parsedData.dataNascimento ?? '',
       birthDate: parsedData.dataNascimento ?? '',
       genero: passageiros[passageiroIndex].genero || '',
-      nacionalidade: passageiros[passageiroIndex].nacionalidade || 'Brasil',
+      nacionalidade: passageiros[passageiroIndex].nacionalidade || DEFAULT_NATIONALITY,
       imagemDataUrl: imageDataUrl || passageiros[passageiroIndex].imagemDataUrl || ''
     };
     
@@ -459,7 +500,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     dataNascimento: msg.data.dataNascimento ?? '',
     // CORRIGIDO: preserva genero e nacionalidade que o usuário pode ter editado
     genero: passageiros[passageiroAtual].genero || '',
-    nacionalidade: passageiros[passageiroAtual].nacionalidade || 'Brasil',
+    nacionalidade: passageiros[passageiroAtual].nacionalidade || DEFAULT_NATIONALITY,
     imagemDataUrl: passageiros[passageiroAtual].imagemDataUrl || ''
   };
 
@@ -481,7 +522,7 @@ function renderizarPassageiro(index) {
 
   // CORRIGIDO: sincroniza os novos campos com o estado do passageiro
   if (fieldGenero)        fieldGenero.value        = dados.genero       || '';
-  if (fieldNacionalidade) fieldNacionalidade.value = dados.nacionalidade || 'Brasil';
+  if (fieldNacionalidade) fieldNacionalidade.value = dados.nacionalidade || DEFAULT_NATIONALITY;
 
   atualizarPreviewPassageiro(index);
   
@@ -606,8 +647,8 @@ function limparPassageiroAtual() {
     birthDate: '',
     genero: '',
     gender: '',
-    nacionalidade: 'Brasil',
-    nationality: 'Brasil',
+    nacionalidade: DEFAULT_NATIONALITY,
+    nationality: DEFAULT_NATIONALITY,
     imagemDataUrl: ''
   };
 
@@ -616,7 +657,7 @@ function limparPassageiroAtual() {
   fieldCpf.value  = '';
   fieldData.value = '';
   if (fieldGenero)        fieldGenero.value        = '';
-  if (fieldNacionalidade) fieldNacionalidade.value = 'Brasil';
+  if (fieldNacionalidade) fieldNacionalidade.value = DEFAULT_NATIONALITY;
 
   // Volta a mostrar a zona de upload
   previewBox.style.display = 'none';
@@ -642,7 +683,7 @@ function finalizarEIrAoFormulario() {
 
       // CORRIGIDO: lê genero e nacionalidade dos selects antes de salvar
       const generoAtual       = fieldGenero       ? fieldGenero.value        : (p.genero       || '');
-      const nacionalidadeAtual = fieldNacionalidade ? fieldNacionalidade.value : (p.nacionalidade || 'Brasil');
+      const nacionalidadeAtual = fieldNacionalidade ? fieldNacionalidade.value : (p.nacionalidade || DEFAULT_NATIONALITY);
 
       return {
         nome: nomeCompleto,

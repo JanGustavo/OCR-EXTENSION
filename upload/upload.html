@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <title>OCR Passagens — Selecionar imagem</title>
+    <title>OCR Passagens</title>
     <style>
       *,
       *::before,
@@ -341,7 +341,7 @@
   </head>
   <body>
     <div class="card">
-      <h1>✈ OCR Passagens</h1>
+      <h1 id="page-heading">✈ OCR Passagens</h1>
       <p class="sub">
         Selecione ou arraste uma imagem com os dados do passageiro
       </p>
@@ -407,8 +407,8 @@
         -->
         <label>
           Gênero
-          <span class="optional-badge"
-            >(opcional — preenche o select da Azul)</span
+          <span class="optional-badge" id="genero-hint"
+            >(opcional — preenche o select do provedor)</span
           >
         </label>
         <select id="field-genero">

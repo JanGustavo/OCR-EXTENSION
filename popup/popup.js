@@ -3,6 +3,28 @@ let injectInFlight = false;
 let lastInjectedSignature = '';
 let lastInjectedAt = 0;
 
+function getUploadEntryForUrl(url) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+
+    if (hostname.includes('latam.com') || hostname.includes('latamairlines.com')) {
+      return 'upload/upload.html?provider=latam';
+    }
+
+    if (hostname.includes('smiles.com.br') || hostname.includes('gol.com.br') || hostname.includes('voegol.com.br')) {
+      return 'upload/upload.html?provider=smiles';
+    }
+
+    if (hostname.includes('azul.com.br') || hostname.includes('voeazul.com.br')) {
+      return 'upload/upload.html?provider=azul';
+    }
+  } catch (err) {
+    console.warn('[Popup] Não foi possível detectar o provedor pela URL:', err);
+  }
+
+  return 'upload/upload.html?provider=azul';
+}
+
 // Ao abrir o popup, verifica se há dados OCR no storage (novo fluxo com test-form.html)
 chrome.storage.local.get(['passageirosOCR', 'ocrResult', 'ocrPendente'], (result) => {
   console.log('[Popup] Storage keys:', result);
@@ -31,6 +53,8 @@ $('btn-open-upload').addEventListener('click', async () => {
     const targetTabId = activeTab?.id;
 
     const uploadUrl = new URL(chrome.runtime.getURL('upload/upload.html'));
+    const providerUrl = new URL(chrome.runtime.getURL(getUploadEntryForUrl(activeTab?.url || '')));
+    uploadUrl.search = providerUrl.search;
     if (Number.isInteger(targetTabId)) {
       uploadUrl.searchParams.set('targetTabId', String(targetTabId));
     }
