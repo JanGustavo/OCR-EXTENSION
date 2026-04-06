@@ -66,32 +66,39 @@ function iniciarInjecao(passageiros) {
 // ─── Lógica de preenchimento ────────────────────────────────────────────────
 
 /**
+/**
  * Preenche o formulário com os dados extraídos pelo OCR.
  * @param {{ nomeCompleto: string, primeiroNome: string, sobrenome: string, cpf: string, dataNascimento: string }} data
  * @param {Object} selectors - Mapa de seletores para o provider atual
  * @param {string} providerId
  */
 function fillForm(data, selectors, providerId) {
-  // Usa os campos separados se disponíveis, caso contrário faz fallback de separação
-  let nome = data.primeiroNome || '';
-  let sobrenome = data.sobrenome || '';
+  // Vai buscar os campos do payload de forma segura
+  let nome = (data.primeiroNome || data.nome || '').trim();
+  let sobrenome = (data.sobrenome || '').trim();
   
-  // Fallback: se não temos campos separados, tenta separar do nomeCompleto
-  if (!nome && data.nomeCompleto) {
-    const palavras = (data.nomeCompleto || '').trim().split(/\s+/);
-    if (palavras.length > 1) {
-      sobrenome = palavras[palavras.length - 1];
-      nome = palavras.slice(0, -1).join(' ');
-    } else {
-      nome = data.nomeCompleto;
-    }
+  // NOVA LÓGICA (FIX): Se não houver sobrenome, mas o 'nome' tiver múltiplas palavras,
+  // fazemos a separação forçada aqui.
+  if (!sobrenome && nome.includes(' ')) {
+    const palavras = nome.split(/\s+/);
+    sobrenome = palavras.pop(); // Remove a última palavra e guarda como sobrenome
+    nome = palavras.join(' ');  // As restantes ficam como primeiro nome
+  } 
+  // Fallback antigo: caso só venha a string nomeCompleto
+  else if (!nome && !sobrenome && data.nomeCompleto) {
+    const palavras = data.nomeCompleto.trim().split(/\s+/);
+    sobrenome = palavras.length > 1 ? palavras.pop() : '';
+    nome = palavras.join(' ');
   }
 
+  // O mapa de preenchimento atualizado com os nomes devidamente separados
   const fillMap = {
-    nome: nome || data.nome,
-    sobrenome,
+    nome: nome,
+    sobrenome: sobrenome,
     cpf: data.cpf,
-    dataNascimento: data.dataNascimento
+      dataNascimento: data.dataNascimento,
+      email: data.email,
+      telefone: data.telefone
   };
 
   let successCount = 0;
@@ -110,7 +117,9 @@ function fillForm(data, selectors, providerId) {
   }
 
   console.info(`[Injector:${providerId}] ${successCount} campo(s) preenchido(s).`);
-  highlightFilledFields();
+  if (typeof highlightFilledFields === 'function') {
+      highlightFilledFields();
+  }
 }
 
 /**

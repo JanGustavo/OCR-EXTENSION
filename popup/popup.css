@@ -72,6 +72,13 @@ header h1 {
     background: rgba(99, 102, 241, 0.06);
 }
 
+#drop-zone:focus-visible {
+    outline: 2px solid var(--accent-h);
+    outline-offset: 2px;
+    border-color: var(--accent);
+    background: rgba(99, 102, 241, 0.08);
+}
+
 .drop-icon {
     font-size: 28px;
 }

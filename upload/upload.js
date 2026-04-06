@@ -16,19 +16,22 @@ const providerConfigMap = {
     title: 'OCR Passagens — Azul',
     heading: '✈ OCR Passagens Azul',
     generoHint: '(opcional — preenche o select da Azul)',
-    nationality: 'Brasil'
+    nationality: 'Brasil',
+    showContactFields: false
   },
   latam: {
     title: 'OCR Passagens — LATAM',
     heading: '✈ OCR Passagens LATAM',
     generoHint: '(opcional — preenche o select da LATAM)',
-    nationality: 'Brasil'
+    nationality: 'Brasil',
+    showContactFields: true
   },
   smiles: {
     title: 'OCR Passagens — Smiles',
     heading: '✈ OCR Passagens Smiles',
     generoHint: '(opcional — preenche o select da Smiles)',
-    nationality: 'Brasil'
+    nationality: 'Brasil',
+    showContactFields: true
   }
 };
 
@@ -43,6 +46,8 @@ let passageiros = Array.from({ length: 9 }, () => ({
   dataNascimento: '',
   genero: '',          // CORRIGIDO: adicionado para o select da Azul
   nacionalidade: DEFAULT_NATIONALITY, // CORRIGIDO: padrão do provedor atual
+  email: '',
+  telefone: '',
   imagemDataUrl: ''
 }));
 
@@ -71,6 +76,9 @@ const btnSelectImage = document.getElementById('btn-select-image');
 const fieldNome      = document.getElementById('field-nome');
 const fieldCpf       = document.getElementById('field-cpf');
 const fieldData      = document.getElementById('field-data');
+const contactFields  = document.getElementById('contact-fields');
+const fieldEmail     = document.getElementById('field-email');
+const fieldTelefone  = document.getElementById('field-telefone');
 const btnUploadMore    = document.getElementById('btn-upload-more');
 const btnBack          = document.getElementById('btn-back');
 const btnFinish        = document.getElementById('btn-finish');
@@ -110,6 +118,19 @@ function aplicarConfiguracaoDoProvedor() {
 
   if (generoHint) {
     generoHint.textContent = providerConfig.generoHint;
+  }
+
+  if (contactFields) {
+    contactFields.classList.toggle('hidden', !providerConfig.showContactFields);
+
+    if (!providerConfig.showContactFields) {
+      if (fieldEmail) fieldEmail.value = '';
+      if (fieldTelefone) fieldTelefone.value = '';
+      if (passageiros[passageiroAtual]) {
+        passageiros[passageiroAtual].email = '';
+        passageiros[passageiroAtual].telefone = '';
+      }
+    }
   }
 }
 
@@ -211,6 +232,18 @@ function setupEventListeners() {
     fieldNacionalidade.addEventListener('change', () => {
       passageiros[passageiroAtual].nacionalidade = fieldNacionalidade.value;
       passageiros[passageiroAtual].nationality   = fieldNacionalidade.value;
+    });
+  }
+
+  if (fieldEmail) {
+    fieldEmail.addEventListener('input', () => {
+      passageiros[passageiroAtual].email = fieldEmail.value;
+    });
+  }
+
+  if (fieldTelefone) {
+    fieldTelefone.addEventListener('input', () => {
+      passageiros[passageiroAtual].telefone = fieldTelefone.value;
     });
   }
 
@@ -453,6 +486,8 @@ async function processarImagemComOCR(imageDataUrl, passageiroIndex = passageiroA
       birthDate: parsedData.dataNascimento ?? '',
       genero: passageiros[passageiroIndex].genero || '',
       nacionalidade: passageiros[passageiroIndex].nacionalidade || DEFAULT_NATIONALITY,
+      email: passageiros[passageiroIndex].email || '',
+      telefone: passageiros[passageiroIndex].telefone || '',
       imagemDataUrl: imageDataUrl || passageiros[passageiroIndex].imagemDataUrl || ''
     };
     
@@ -501,6 +536,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // CORRIGIDO: preserva genero e nacionalidade que o usuário pode ter editado
     genero: passageiros[passageiroAtual].genero || '',
     nacionalidade: passageiros[passageiroAtual].nacionalidade || DEFAULT_NATIONALITY,
+    email: passageiros[passageiroAtual].email || '',
+    telefone: passageiros[passageiroAtual].telefone || '',
     imagemDataUrl: passageiros[passageiroAtual].imagemDataUrl || ''
   };
 
@@ -523,6 +560,8 @@ function renderizarPassageiro(index) {
   // CORRIGIDO: sincroniza os novos campos com o estado do passageiro
   if (fieldGenero)        fieldGenero.value        = dados.genero       || '';
   if (fieldNacionalidade) fieldNacionalidade.value = dados.nacionalidade || DEFAULT_NATIONALITY;
+  if (fieldEmail)        fieldEmail.value         = dados.email || '';
+  if (fieldTelefone)     fieldTelefone.value      = dados.telefone || '';
 
   atualizarPreviewPassageiro(index);
   
@@ -649,6 +688,8 @@ function limparPassageiroAtual() {
     gender: '',
     nacionalidade: DEFAULT_NATIONALITY,
     nationality: DEFAULT_NATIONALITY,
+    email: '',
+    telefone: '',
     imagemDataUrl: ''
   };
 
@@ -658,6 +699,8 @@ function limparPassageiroAtual() {
   fieldData.value = '';
   if (fieldGenero)        fieldGenero.value        = '';
   if (fieldNacionalidade) fieldNacionalidade.value = DEFAULT_NATIONALITY;
+  if (fieldEmail)         fieldEmail.value         = '';
+  if (fieldTelefone)      fieldTelefone.value      = '';
 
   // Volta a mostrar a zona de upload
   previewBox.style.display = 'none';
@@ -684,6 +727,11 @@ function finalizarEIrAoFormulario() {
       // CORRIGIDO: lê genero e nacionalidade dos selects antes de salvar
       const generoAtual       = fieldGenero       ? fieldGenero.value        : (p.genero       || '');
       const nacionalidadeAtual = fieldNacionalidade ? fieldNacionalidade.value : (p.nacionalidade || DEFAULT_NATIONALITY);
+      const emailAtual        = fieldEmail        ? fieldEmail.value.trim()    : (p.email      || '');
+      const telefoneAtual     = fieldTelefone     ? fieldTelefone.value.trim() : (p.telefone   || '');
+
+      const emailFinal = providerConfig.showContactFields ? emailAtual : '';
+      const telefoneFinal = providerConfig.showContactFields ? telefoneAtual : '';
 
       return {
         nome: nomeCompleto,
@@ -695,7 +743,9 @@ function finalizarEIrAoFormulario() {
         genero:         generoAtual,
         gender:         generoAtual,       // alias para compatibilidade com azul.js
         nacionalidade:  nacionalidadeAtual,
-        nationality:    nacionalidadeAtual  // alias para compatibilidade com azul.js
+        nationality:    nacionalidadeAtual, // alias para compatibilidade com azul.js
+        email:          emailFinal,
+        telefone:       telefoneFinal
       };
     });
   

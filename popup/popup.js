@@ -2,27 +2,53 @@ const $ = (id) => document.getElementById(id);
 let injectInFlight = false;
 let lastInjectedSignature = '';
 let lastInjectedAt = 0;
+let activeProvider = 'azul';
 
-function getUploadEntryForUrl(url) {
+function getProviderFromUrl(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
 
     if (hostname.includes('latam.com') || hostname.includes('latamairlines.com')) {
-      return 'upload/upload.html?provider=latam';
+      return 'latam';
     }
 
     if (hostname.includes('smiles.com.br') || hostname.includes('gol.com.br') || hostname.includes('voegol.com.br')) {
-      return 'upload/upload.html?provider=smiles';
+      return 'smiles';
     }
 
     if (hostname.includes('azul.com.br') || hostname.includes('voeazul.com.br')) {
-      return 'upload/upload.html?provider=azul';
+      return 'azul';
     }
   } catch (err) {
-    console.warn('[Popup] Não foi possível detectar o provedor pela URL:', err);
+    console.warn('[Popup] Não foi possível detectar provider pela URL:', err);
   }
 
-  return 'upload/upload.html?provider=azul';
+  return 'azul';
+}
+
+function updateExtraFieldsVisibility(provider) {
+  const extraFields = $('extra-fields');
+  if (!extraFields) return;
+
+  const shouldShow = provider === 'latam' || provider === 'smiles';
+  extraFields.classList.toggle('hidden', !shouldShow);
+
+  if (!shouldShow) {
+    const fieldEmail = $('field-email');
+    const fieldTelefone = $('field-telefone');
+    if (fieldEmail) fieldEmail.value = '';
+    if (fieldTelefone) fieldTelefone.value = '';
+  }
+}
+
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const activeTab = tabs?.[0];
+  activeProvider = getProviderFromUrl(activeTab?.url || '');
+  updateExtraFieldsVisibility(activeProvider);
+});
+
+function getUploadEntryForUrl(url) {
+  return `upload/upload.html?provider=${getProviderFromUrl(url)}`;
 }
 
 // Ao abrir o popup, verifica se há dados OCR no storage (novo fluxo com test-form.html)
@@ -47,7 +73,7 @@ chrome.storage.local.get(['passageirosOCR', 'ocrResult', 'ocrPendente'], (result
 });
 
 // Abre a aba de upload
-$('btn-open-upload').addEventListener('click', async () => {
+async function openUploadTab() {
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const targetTabId = activeTab?.id;
@@ -65,7 +91,26 @@ $('btn-open-upload').addEventListener('click', async () => {
     console.error('Erro ao abrir upload:', err);
     showStatus('Falha ao abrir tela de upload.', 'error');
   }
+}
+
+$('btn-open-upload').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openUploadTab();
 });
+
+const dropZone = $('drop-zone');
+if (dropZone) {
+  dropZone.addEventListener('click', () => {
+    openUploadTab();
+  });
+
+  dropZone.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openUploadTab();
+    }
+  });
+}
 
 // Limpa os dados do último OCR para reiniciar o fluxo
 $('btn-clear-ocr').addEventListener('click', () => {
@@ -80,6 +125,10 @@ $('btn-clear-ocr').addEventListener('click', () => {
     $('field-sobrenome').value = '';
     $('field-cpf').value = '';
     $('field-data').value = '';
+    const fieldEmail = $('field-email');
+    const fieldTelefone = $('field-telefone');
+    if (fieldEmail) fieldEmail.value = '';
+    if (fieldTelefone) fieldTelefone.value = '';
 
     $('result-section').classList.add('hidden');
     $('upload-section').classList.remove('hidden');
@@ -100,13 +149,18 @@ $('btn-inject').addEventListener('click', async () => {
   const fieldSobrenome = $('field-sobrenome');
   const fieldCpf = $('field-cpf');
   const fieldData = $('field-data');
+  const fieldEmail = $('field-email');
+  const fieldTelefone = $('field-telefone');
+  const shouldSendExtra = activeProvider === 'latam' || activeProvider === 'smiles';
 
   const data = {
     primeiroNome:      fieldNome.value.trim(),
     sobrenome:         fieldSobrenome.value.trim(),
     nomeCompleto:      (fieldNome.value.trim() + ' ' + fieldSobrenome.value.trim()).trim(),
     cpf:               fieldCpf.value.trim(),
-    dataNascimento:    fieldData.value.trim()
+    dataNascimento:    fieldData.value.trim(),
+    email:             shouldSendExtra ? (fieldEmail?.value.trim() || '') : '',
+    telefone:          shouldSendExtra ? (fieldTelefone?.value.trim() || '') : ''
   };
 
   const signature = JSON.stringify(data);
@@ -140,7 +194,9 @@ $('btn-inject').addEventListener('click', async () => {
         cpf: data.cpf,
         birthDate: data.dataNascimento,
         nome: data.nomeCompleto,
-        dataNascimento: data.dataNascimento
+        dataNascimento: data.dataNascimento,
+        email: data.email,
+        telefone: data.telefone
       };
       
       chrome.storage.local.set({ passageirosOCR: [dataToSave] }, () => {
@@ -159,55 +215,17 @@ $('btn-inject').addEventListener('click', async () => {
       return showStatus('Abra a página do formulário e tente novamente.', 'error');
     } else {
       // ─── Para páginas de conteúdo normal ───
-      console.log('[Popup] Injetando em página de conteúdo...');
+      console.log('[Popup] Avisando a página para iniciar a injeção...');
       
       await chrome.scripting.executeScript({
         target: { tabId: targetTab.id, allFrames: true },
         func: (d) => {
           window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: d }));
-
-          const setInputValue = (el, value) => {
-            if (!el || value == null || value === '') return false;
-
-            const nativeSetter = Object.getOwnPropertyDescriptor(
-              window.HTMLInputElement.prototype,
-              'value'
-            )?.set;
-
-            if (nativeSetter) {
-              nativeSetter.call(el, value);
-            } else {
-              el.value = value;
-            }
-
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            el.dispatchEvent(new Event('blur', { bubbles: true }));
-            return true;
-          };
-
-          const nomeCompleto = (d?.nomeCompleto || '').trim();
-          const primeiroNome = (d?.primeiroNome || '').trim();
-          const sobrenome = (d?.sobrenome || '').trim();
-
-          const candidates = {
-            fullName: document.querySelector('#fullName, [name="fullName"], [data-testid="passenger-name"]'),
-            firstName: document.querySelector('#firstName, [name*="firstName"], [name="nome"], [placeholder*="Nome"]'),
-            lastName: document.querySelector('#lastName, [name*="lastName"], [name="sobrenome"], [placeholder*="Sobrenome"]'),
-            cpf: document.querySelector('#cpf, [name*="cpf"], [data-testid="cpf-field"]'),
-            birthDate: document.querySelector('#birthDate, [name*="birthDate"], [data-testid="birthdate"]')
-          };
-
-          setInputValue(candidates.fullName, nomeCompleto);
-          setInputValue(candidates.firstName, primeiroNome);
-          setInputValue(candidates.lastName, sobrenome);
-          setInputValue(candidates.cpf, d?.cpf || '');
-          setInputValue(candidates.birthDate, d?.dataNascimento || '');
         },
         args: [data]
       });
 
-      showStatus('✓ Formulário preenchido com sucesso!', 'success');
+      showStatus('✓ Comando de preenchimento enviado!', 'success');
     }
 
     lastInjectedSignature = signature;
@@ -230,6 +248,10 @@ function mostrarDados(data) {
   $('field-sobrenome').value = sobrenome;
   $('field-cpf').value  = data.cpf  ?? '';
   $('field-data').value = data.dataNascimento ?? '';
+  const fieldEmail = $('field-email');
+  const fieldTelefone = $('field-telefone');
+  if (fieldEmail) fieldEmail.value = data.email ?? '';
+  if (fieldTelefone) fieldTelefone.value = data.telefone ?? '';
   $('upload-section').classList.add('hidden');
   $('result-section').classList.remove('hidden');
   showStatus('Dados prontos! Revise e clique em "Preencher formulário".', 'success');

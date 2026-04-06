@@ -13,16 +13,24 @@
 
     <main>
       <section id="upload-section">
-        <div id="drop-zone" style="cursor: default">
+        <div
+          id="drop-zone"
+          role="button"
+          tabindex="0"
+          aria-label="Abrir tela de OCR em nova aba"
+        >
           <span class="drop-icon">📄</span>
-          <p>Clique para selecionar uma imagem</p>
-          <small>Abre numa aba separada para evitar bugs do Chrome</small>
+          <p>Clique para abrir o OCR em nova aba</p>
+          <small
+            >A tela de leitura e validação abre separada para maior
+            estabilidade</small
+          >
           <button
             id="btn-open-upload"
             class="btn-primary"
             style="margin-top: 12px"
           >
-            Selecionar imagem
+            Abrir tela de OCR
           </button>
         </div>
       </section>
@@ -62,6 +70,26 @@
             placeholder="DD/MM/AAAA"
             maxlength="10"
           />
+        </div>
+
+        <div id="extra-fields" class="hidden">
+          <div class="field-group">
+            <label for="field-email">E-mail</label>
+            <input
+              type="email"
+              id="field-email"
+              placeholder="email@exemplo.com"
+            />
+          </div>
+
+          <div class="field-group">
+            <label for="field-telefone">Telefone</label>
+            <input
+              type="text"
+              id="field-telefone"
+              placeholder="(11) 99999-9999"
+            />
+          </div>
         </div>
 
         <button id="btn-inject" class="btn-primary">
