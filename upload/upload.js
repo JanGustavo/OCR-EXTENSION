@@ -10,7 +10,8 @@ let passageiros = Array.from({ length: 9 }, () => ({
   cpf: '',
   dataNascimento: '',
   genero: '',          // CORRIGIDO: adicionado para o select da Azul
-  nacionalidade: 'Brasileira' // CORRIGIDO: padrão Brasileira
+  nacionalidade: 'Brasil', // CORRIGIDO: padrão Brasil
+  imagemDataUrl: ''
 }));
 
 // 2. Variável que controla qual a aba/slot que o utilizador está a ver agora.
@@ -34,7 +35,9 @@ const btnChange  = document.getElementById('btn-change');
 // Novos elementos
 const uploadSection  = document.getElementById('upload-section');
 const resultSection  = document.getElementById('result-section');
-const passengerTabs  = document.getElementById('passenger-tabs');
+const passengerSummary = document.getElementById('passenger-summary');
+const passengerCounter = document.getElementById('passenger-counter');
+const btnSelectImage = document.getElementById('btn-select-image');
 const fieldNome      = document.getElementById('field-nome');
 const fieldCpf       = document.getElementById('field-cpf');
 const fieldData      = document.getElementById('field-data');
@@ -56,40 +59,12 @@ let ocrWorker = null; // Tesseract worker instance
 
 // Criar as abas dos passageiros
 function criarAbas() {
-  passengerTabs.innerHTML = '';
-  for (let i = 0; i < 9; i++) {
-    const aba = document.createElement('button');
-    aba.textContent = `P${i + 1}`;
-    aba.className = 'passenger-tab';
-    aba.id = `aba-${i}`;
-    aba.type = 'button';
-    aba.onclick = () => {
-      passageiroAtual = i;
-      renderizarPassageiro(i);
-    };
-    passengerTabs.appendChild(aba);
-  }
   atualizarAbas();
+  renderizarResumoPassageiros();
 }
 
 function atualizarAbas() {
-  for (let i = 0; i < 9; i++) {
-    const aba = document.getElementById(`aba-${i}`);
-    const temDados = passageiros[i].nome !== '' || passageiros[i].cpf !== '';
-
-    // Remove classes anteriores
-    aba.classList.remove('active', 'filled');
-
-    // Adiciona classe 'active' se for o passageiro atual
-    if (i === passageiroAtual) {
-      aba.classList.add('active');
-    }
-
-    // Adiciona classe 'filled' se o passageiro tiver dados
-    if (temDados) {
-      aba.classList.add('filled');
-    }
-  }
+  renderizarResumoPassageiros();
 }
 
 function showSection(sectionId) {
@@ -114,6 +89,7 @@ function setupEventListeners() {
 
   dropZone.addEventListener('click', () => {
     console.log('[Upload] Drop-zone clicado');
+    fileInput.value = '';
     fileInput.click();
   });
 
@@ -150,6 +126,13 @@ function setupEventListeners() {
     fileInput.value = '';
     hideStatus();
   });
+
+  if (btnSelectImage) {
+    btnSelectImage.addEventListener('click', () => {
+      fileInput.value = '';
+      fileInput.click();
+    });
+  }
 
   btnBack.addEventListener('click', () => {
     previewBox.style.display = 'none';
@@ -387,14 +370,21 @@ function handleFile(file) {
   if (!file.type.startsWith('image/')) return showStatus('Apenas imagens PNG, JPG ou WEBP.', 'error');
   if (file.size > 5 * 1024 * 1024) return showStatus('Imagem muito grande. Limite: 5MB.', 'error');
 
-  const url = URL.createObjectURL(file);
-  previewImg.src = url;
-  previewImg.onload = () => URL.revokeObjectURL(url);
-  dropZone.style.display = 'none';
-  previewBox.style.display = 'block';
+  const passageiroIndex = passageiroAtual;
 
   const reader = new FileReader();
-  reader.onload  = (e) => processarImagemComOCR(e.target.result);
+  reader.onload  = (e) => {
+    const imageDataUrl = e.target.result;
+
+    passageiros[passageiroIndex].imagemDataUrl = imageDataUrl;
+    if (passageiroIndex === passageiroAtual) {
+      atualizarPreviewPassageiro(passageiroIndex);
+    } else {
+      atualizarAbas();
+    }
+
+    processarImagemComOCR(imageDataUrl, passageiroIndex);
+  };
   reader.onerror = ()  => { showSpinner(false); showStatus('Erro ao ler a imagem.', 'error'); };
   reader.readAsDataURL(file);
 }
@@ -402,7 +392,7 @@ function handleFile(file) {
 /**
  * Processa a imagem: OCR local + parsing + guarda no array
  */
-async function processarImagemComOCR(imageDataUrl) {
+async function processarImagemComOCR(imageDataUrl, passageiroIndex = passageiroAtual) {
   try {
     showSpinner(true);
     const parsedData = await runOCROnImage(imageDataUrl);
@@ -413,19 +403,24 @@ async function processarImagemComOCR(imageDataUrl) {
     
     // Guarda os dados no array na posição do passageiro atual
     // CORRIGIDO: preserva genero e nacionalidade que o usuário pode ter editado manualmente
-    passageiros[passageiroAtual] = {
+    passageiros[passageiroIndex] = {
       nome: parsedData.nomeCompleto ?? '',
       firstName: parsedData.primeiroNome ?? '',
       lastName: parsedData.sobrenome ?? '',
       cpf: parsedData.cpf ?? '',
       dataNascimento: parsedData.dataNascimento ?? '',
       birthDate: parsedData.dataNascimento ?? '',
-      genero: passageiros[passageiroAtual].genero || '',
-      nacionalidade: passageiros[passageiroAtual].nacionalidade || 'Brasileira'
+      genero: passageiros[passageiroIndex].genero || '',
+      nacionalidade: passageiros[passageiroIndex].nacionalidade || 'Brasil',
+      imagemDataUrl: imageDataUrl || passageiros[passageiroIndex].imagemDataUrl || ''
     };
     
     // Mostra os dados no ecrã
-    renderizarPassageiro(passageiroAtual);
+    if (passageiroIndex === passageiroAtual) {
+      renderizarPassageiro(passageiroIndex);
+    } else {
+      atualizarAbas();
+    }
   } catch (err) {
     console.error('[Upload] Erro ao processar imagem:', err);
     showSpinner(false);
@@ -464,7 +459,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     dataNascimento: msg.data.dataNascimento ?? '',
     // CORRIGIDO: preserva genero e nacionalidade que o usuário pode ter editado
     genero: passageiros[passageiroAtual].genero || '',
-    nacionalidade: passageiros[passageiroAtual].nacionalidade || 'Brasileira'
+    nacionalidade: passageiros[passageiroAtual].nacionalidade || 'Brasil',
+    imagemDataUrl: passageiros[passageiroAtual].imagemDataUrl || ''
   };
 
   // 4. Mostrar os dados no ecrã
@@ -485,7 +481,9 @@ function renderizarPassageiro(index) {
 
   // CORRIGIDO: sincroniza os novos campos com o estado do passageiro
   if (fieldGenero)        fieldGenero.value        = dados.genero       || '';
-  if (fieldNacionalidade) fieldNacionalidade.value = dados.nacionalidade || 'Brasileira';
+  if (fieldNacionalidade) fieldNacionalidade.value = dados.nacionalidade || 'Brasil';
+
+  atualizarPreviewPassageiro(index);
   
   // Atualizar seleção da aba
   atualizarAbas();
@@ -497,6 +495,103 @@ function renderizarPassageiro(index) {
     // Se estiver vazio (ex: quando trocamos para uma aba nova)
     hideStatus();
   }
+}
+
+function getIniciales(nome) {
+  const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return 'P';
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return `${partes[0][0] || ''}${partes[1][0] || ''}`.toUpperCase();
+}
+
+function getNomeCurto(dados) {
+  const nome = String(dados?.nome || '').trim();
+  if (nome) {
+    const partes = nome.split(/\s+/).filter(Boolean);
+    if (partes.length <= 2) return nome;
+    return `${partes[0]} ${partes[partes.length - 1]}`;
+  }
+
+  if (dados?.firstName || dados?.lastName) {
+    const composed = `${dados.firstName || ''} ${dados.lastName || ''}`.trim();
+    if (!composed) return '';
+    const partes = composed.split(/\s+/).filter(Boolean);
+    if (partes.length <= 2) return composed;
+    return `${partes[0]} ${partes[partes.length - 1]}`;
+  }
+
+  return '';
+}
+
+function renderizarResumoPassageiros() {
+  if (!passengerSummary) return;
+
+  passengerSummary.innerHTML = '';
+
+  const preenchidos = passageiros.filter((p) => p.nome || p.cpf || p.imagemDataUrl).length;
+  if (passengerCounter) {
+    passengerCounter.textContent = `${preenchidos} de 9 preenchidos`;
+  }
+
+  passageiros.forEach((dados, index) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'passenger-card';
+    card.setAttribute('aria-pressed', String(index === passageiroAtual));
+
+    if (index === passageiroAtual) card.classList.add('active');
+    if (dados.nome || dados.cpf || dados.imagemDataUrl) card.classList.add('filled');
+    else card.classList.add('empty');
+
+    const thumb = document.createElement('div');
+    thumb.className = 'thumb';
+
+    if (dados.imagemDataUrl) {
+      thumb.style.backgroundImage = `url(${dados.imagemDataUrl})`;
+      thumb.textContent = '';
+    } else {
+      thumb.textContent = getIniciales(dados.nome || dados.firstName || `P${index + 1}`);
+    }
+
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = `P${index + 1}`;
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = getNomeCurto(dados) || 'Sem dados';
+
+    const status = document.createElement('div');
+    status.className = 'card-status';
+    status.textContent = dados.imagemDataUrl || dados.nome || dados.cpf ? 'Com dados' : 'Vazio';
+
+    card.appendChild(thumb);
+    card.appendChild(title);
+    card.appendChild(name);
+    card.appendChild(status);
+
+    card.addEventListener('click', () => {
+      passageiroAtual = index;
+      renderizarPassageiro(index);
+    });
+
+    passengerSummary.appendChild(card);
+  });
+}
+
+function atualizarPreviewPassageiro(index) {
+  const dados = passageiros[index];
+
+  if (dados?.imagemDataUrl) {
+    previewImg.src = dados.imagemDataUrl;
+    previewBox.style.display = 'block';
+    dropZone.style.display = 'none';
+    return;
+  }
+
+  previewImg.removeAttribute('src');
+  previewBox.style.display = 'none';
+  dropZone.style.display = 'block';
 }
 
 // ─── Limpar passageiro atual ──────────────────────────────────────────────────
@@ -511,8 +606,9 @@ function limparPassageiroAtual() {
     birthDate: '',
     genero: '',
     gender: '',
-    nacionalidade: 'Brasileira',
-    nationality: 'Brasileira'
+    nacionalidade: 'Brasil',
+    nationality: 'Brasil',
+    imagemDataUrl: ''
   };
 
   // Limpa os campos visuais
@@ -520,14 +616,16 @@ function limparPassageiroAtual() {
   fieldCpf.value  = '';
   fieldData.value = '';
   if (fieldGenero)        fieldGenero.value        = '';
-  if (fieldNacionalidade) fieldNacionalidade.value = 'Brasileira';
+  if (fieldNacionalidade) fieldNacionalidade.value = 'Brasil';
 
   // Volta a mostrar a zona de upload
   previewBox.style.display = 'none';
+  previewImg.removeAttribute('src');
   dropZone.style.display   = 'block';
   fileInput.value          = '';
 
   atualizarAbas();
+  renderizarResumoPassageiros();
   hideStatus();
 }
 
@@ -544,7 +642,7 @@ function finalizarEIrAoFormulario() {
 
       // CORRIGIDO: lê genero e nacionalidade dos selects antes de salvar
       const generoAtual       = fieldGenero       ? fieldGenero.value        : (p.genero       || '');
-      const nacionalidadeAtual = fieldNacionalidade ? fieldNacionalidade.value : (p.nacionalidade || 'Brasileira');
+      const nacionalidadeAtual = fieldNacionalidade ? fieldNacionalidade.value : (p.nacionalidade || 'Brasil');
 
       return {
         nome: nomeCompleto,

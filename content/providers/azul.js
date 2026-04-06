@@ -234,11 +234,11 @@
       ).trim();
 
       /**
-       * Nacionalidade: padrão 'Brasileira' quando não informado,
+       * Nacionalidade: padrão 'Brasil' quando não informado,
        * pois é o caso de uso primário da extensão.
        */
       const nacionalidade = String(
-        passageiro.nacionalidade || passageiro.nationality || 'Brasileira'
+        passageiro.nacionalidade || passageiro.nationality || 'Brasil'
       ).trim();
 
       console.log(`[Azul] Injetando passageiro ${index}:`, {
