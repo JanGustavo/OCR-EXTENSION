@@ -38,6 +38,15 @@
       <section id="result-section" class="hidden">
         <h2>Dados Extraídos</h2>
 
+        <div
+          id="passenger-switcher"
+          class="hidden"
+          aria-label="Selecionar passageiro"
+        >
+          <div id="passenger-tabs" class="passenger-tabs"></div>
+          <small id="passenger-meta" class="passenger-meta"></small>
+        </div>
+
         <div class="field-group">
           <label for="field-nome">Nome</label>
           <input type="text" id="field-nome" placeholder="Nome(s)" />
@@ -70,6 +79,26 @@
             placeholder="DD/MM/AAAA"
             maxlength="10"
           />
+        </div>
+
+        <div class="field-group">
+          <label for="field-genero">Gênero</label>
+          <select id="field-genero">
+            <option value="">Não informar</option>
+            <option value="Masculino">Masculino</option>
+            <option value="Feminino">Feminino</option>
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label for="field-nacionalidade">Nacionalidade</label>
+          <select id="field-nacionalidade">
+            <option value="Brasil">Brasil</option>
+            <option value="Americana">Americana</option>
+            <option value="Portuguesa">Portuguesa</option>
+            <option value="Argentina">Argentina</option>
+            <option value="Outra">Outra</option>
+          </select>
         </div>
 
         <div id="extra-fields" class="hidden">

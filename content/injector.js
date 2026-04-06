@@ -96,9 +96,11 @@ function fillForm(data, selectors, providerId) {
     nome: nome,
     sobrenome: sobrenome,
     cpf: data.cpf,
-      dataNascimento: data.dataNascimento,
-      email: data.email,
-      telefone: data.telefone
+    dataNascimento: data.dataNascimento,
+    genero: data.genero || data.gender,
+    nacionalidade: data.nacionalidade || data.nationality,
+    email: data.email,
+    telefone: data.telefone
   };
 
   let successCount = 0;

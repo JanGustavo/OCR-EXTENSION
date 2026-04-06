@@ -3,6 +3,8 @@ let injectInFlight = false;
 let lastInjectedSignature = '';
 let lastInjectedAt = 0;
 let activeProvider = 'azul';
+let passageirosOCR = [];
+let passageiroSelecionado = 0;
 
 function getProviderFromUrl(url) {
   try {
@@ -41,6 +43,152 @@ function updateExtraFieldsVisibility(provider) {
   }
 }
 
+function getCurrentFormData() {
+  const nome = $('field-nome')?.value.trim() || '';
+  const sobrenome = $('field-sobrenome')?.value.trim() || '';
+
+  return {
+    primeiroNome: nome,
+    firstName: nome,
+    sobrenome,
+    lastName: sobrenome,
+    nomeCompleto: `${nome} ${sobrenome}`.trim(),
+    cpf: $('field-cpf')?.value.trim() || '',
+    dataNascimento: $('field-data')?.value.trim() || '',
+    genero: $('field-genero')?.value || '',
+    gender: $('field-genero')?.value || '',
+    nacionalidade: $('field-nacionalidade')?.value || '',
+    nationality: $('field-nacionalidade')?.value || '',
+    email: $('field-email')?.value.trim() || '',
+    telefone: $('field-telefone')?.value.trim() || ''
+  };
+}
+
+function splitNomeSobrenome(nomeCompleto) {
+  const raw = String(nomeCompleto || '').trim();
+  if (!raw) return { primeiroNome: '', sobrenome: '' };
+
+  const partes = raw.split(/\s+/).filter(Boolean);
+  if (partes.length === 1) {
+    return { primeiroNome: partes[0], sobrenome: '' };
+  }
+
+  return {
+    primeiroNome: partes.slice(0, -1).join(' '),
+    sobrenome: partes[partes.length - 1]
+  };
+}
+
+function setFormData(data) {
+  const nomeCompleto = data?.nomeCompleto || data?.nome || '';
+  const split = splitNomeSobrenome(nomeCompleto);
+  const primeiroNome = data?.primeiroNome || data?.firstName || split.primeiroNome;
+  const sobrenome = data?.sobrenome || data?.lastName || split.sobrenome;
+
+  $('field-nome').value = primeiroNome;
+  $('field-sobrenome').value = sobrenome;
+  $('field-cpf').value = data?.cpf ?? '';
+  $('field-data').value = data?.dataNascimento ?? data?.birthDate ?? '';
+  const fieldGenero = $('field-genero');
+  const fieldNacionalidade = $('field-nacionalidade');
+  if (fieldGenero) fieldGenero.value = data?.genero ?? data?.gender ?? '';
+  if (fieldNacionalidade) fieldNacionalidade.value = data?.nacionalidade ?? data?.nationality ?? 'Brasil';
+
+  const fieldEmail = $('field-email');
+  const fieldTelefone = $('field-telefone');
+  if (fieldEmail) fieldEmail.value = data?.email ?? '';
+  if (fieldTelefone) fieldTelefone.value = data?.telefone ?? '';
+}
+
+function hasPassengerData(data) {
+  if (!data) return false;
+  return Boolean(data.nome || data.nomeCompleto || data.primeiroNome || data.firstName || data.sobrenome || data.lastName || data.cpf || data.dataNascimento || data.birthDate || data.email || data.telefone);
+}
+
+function normalizePassengerForInjection(data, shouldSendExtra) {
+  const nomeCompletoBase = String(data?.nomeCompleto || data?.nome || '').trim();
+  const split = splitNomeSobrenome(nomeCompletoBase);
+  const primeiroNome = String(data?.primeiroNome || data?.firstName || split.primeiroNome || '').trim();
+  const sobrenome = String(data?.sobrenome || data?.lastName || split.sobrenome || '').trim();
+  const nomeCompleto = String(`${primeiroNome} ${sobrenome}`.trim() || nomeCompletoBase).trim();
+
+  return {
+    primeiroNome,
+    firstName: primeiroNome,
+    sobrenome,
+    lastName: sobrenome,
+    nomeCompleto,
+    nome: nomeCompleto,
+    cpf: String(data?.cpf || '').trim(),
+    dataNascimento: String(data?.dataNascimento || data?.birthDate || '').trim(),
+    birthDate: String(data?.birthDate || data?.dataNascimento || '').trim(),
+    genero: String(data?.genero || data?.gender || '').trim(),
+    gender: String(data?.gender || data?.genero || '').trim(),
+    nacionalidade: String(data?.nacionalidade || data?.nationality || '').trim(),
+    nationality: String(data?.nationality || data?.nacionalidade || '').trim(),
+    email: shouldSendExtra ? String(data?.email || '').trim() : '',
+    telefone: shouldSendExtra ? String(data?.telefone || '').trim() : ''
+  };
+}
+
+function persistPassengerSelecionado() {
+  if (!Array.isArray(passageirosOCR) || !passageirosOCR.length) return;
+  passageirosOCR[passageiroSelecionado] = {
+    ...(passageirosOCR[passageiroSelecionado] || {}),
+    ...getCurrentFormData()
+  };
+}
+
+function renderPassengerTabs() {
+  const switcher = $('passenger-switcher');
+  const tabs = $('passenger-tabs');
+  const meta = $('passenger-meta');
+  if (!switcher || !tabs || !meta) return;
+
+  tabs.innerHTML = '';
+  const total = passageirosOCR.length;
+
+  switcher.classList.toggle('hidden', total <= 1);
+  if (total <= 1) return;
+
+  passageirosOCR.forEach((passageiro, index) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'passenger-tab';
+    btn.textContent = `P${index + 1}`;
+
+    if (hasPassengerData(passageiro)) btn.classList.add('filled');
+    if (index === passageiroSelecionado) btn.classList.add('active');
+
+    btn.addEventListener('click', () => {
+      persistPassengerSelecionado();
+      passageiroSelecionado = index;
+      setFormData(passageirosOCR[index] || {});
+      renderPassengerTabs();
+      showStatus(`Editando passageiro P${index + 1}.`, 'success');
+    });
+
+    tabs.appendChild(btn);
+  });
+
+  meta.textContent = `Passageiro ${passageiroSelecionado + 1} de ${total}`;
+}
+
+function showPassengersData(passageiros) {
+  if (!Array.isArray(passageiros) || passageiros.length === 0) return;
+
+  passageirosOCR = passageiros.map((p) => ({ ...p }));
+  const firstWithData = passageirosOCR.findIndex((p) => hasPassengerData(p));
+  passageiroSelecionado = firstWithData >= 0 ? firstWithData : 0;
+
+  setFormData(passageirosOCR[passageiroSelecionado] || {});
+  renderPassengerTabs();
+
+  $('upload-section').classList.add('hidden');
+  $('result-section').classList.remove('hidden');
+  showStatus('Dados prontos! Revise e clique em "Preencher formulário".', 'success');
+}
+
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   const activeTab = tabs?.[0];
   activeProvider = getProviderFromUrl(activeTab?.url || '');
@@ -58,16 +206,12 @@ chrome.storage.local.get(['passageirosOCR', 'ocrResult', 'ocrPendente'], (result
   // Novo fluxo: dados salvos por upload.js em test-form + test-form.js
   if (result.passageirosOCR && Array.isArray(result.passageirosOCR)) {
     console.log('[Popup] Encontrados passageiros OCR:', result.passageirosOCR.length);
-    // Preencher com o primeiro passageiro que tem dados
-    const primeiroPreenchido = result.passageirosOCR.find(p => p.nome || p.cpf);
-    if (primeiroPreenchido) {
-      mostrarDados(primeiroPreenchido);
-    }
+    showPassengersData(result.passageirosOCR);
   }
   // Fluxo antigo (compatibilidade)
   else if (result.ocrPendente && result.ocrResult) {
     console.log('[Popup] Encontrados dados legacy (ocrResult)');
-    mostrarDados(result.ocrResult);
+    showPassengersData([result.ocrResult]);
     chrome.storage.local.set({ ocrPendente: false });
   }
 });
@@ -125,13 +269,21 @@ $('btn-clear-ocr').addEventListener('click', () => {
     $('field-sobrenome').value = '';
     $('field-cpf').value = '';
     $('field-data').value = '';
+    const fieldGenero = $('field-genero');
+    const fieldNacionalidade = $('field-nacionalidade');
     const fieldEmail = $('field-email');
     const fieldTelefone = $('field-telefone');
+    if (fieldGenero) fieldGenero.value = '';
+    if (fieldNacionalidade) fieldNacionalidade.value = 'Brasil';
     if (fieldEmail) fieldEmail.value = '';
     if (fieldTelefone) fieldTelefone.value = '';
 
     $('result-section').classList.add('hidden');
     $('upload-section').classList.remove('hidden');
+
+    passageirosOCR = [];
+    passageiroSelecionado = 0;
+    renderPassengerTabs();
 
     lastInjectedSignature = '';
     lastInjectedAt = 0;
@@ -145,31 +297,44 @@ $('btn-clear-ocr').addEventListener('click', () => {
 $('btn-inject').addEventListener('click', async () => {
   if (injectInFlight) return;
 
+  persistPassengerSelecionado();
+
   const fieldNome = $('field-nome');
   const fieldSobrenome = $('field-sobrenome');
   const fieldCpf = $('field-cpf');
   const fieldData = $('field-data');
+  const fieldGenero = $('field-genero');
+  const fieldNacionalidade = $('field-nacionalidade');
   const fieldEmail = $('field-email');
   const fieldTelefone = $('field-telefone');
   const shouldSendExtra = activeProvider === 'latam' || activeProvider === 'smiles';
 
-  const data = {
+  const dataAtual = {
     primeiroNome:      fieldNome.value.trim(),
     sobrenome:         fieldSobrenome.value.trim(),
     nomeCompleto:      (fieldNome.value.trim() + ' ' + fieldSobrenome.value.trim()).trim(),
     cpf:               fieldCpf.value.trim(),
     dataNascimento:    fieldData.value.trim(),
+    genero:            fieldGenero?.value || '',
+    gender:            fieldGenero?.value || '',
+    nacionalidade:     fieldNacionalidade?.value || '',
+    nationality:       fieldNacionalidade?.value || '',
     email:             shouldSendExtra ? (fieldEmail?.value.trim() || '') : '',
     telefone:          shouldSendExtra ? (fieldTelefone?.value.trim() || '') : ''
   };
 
-  const signature = JSON.stringify(data);
+  const passageirosBase = passageirosOCR.length ? passageirosOCR : [dataAtual];
+  const passageirosPayload = passageirosBase
+    .map((p) => normalizePassengerForInjection(p, shouldSendExtra))
+    .filter((p) => hasPassengerData(p));
+
+  const signature = JSON.stringify(passageirosPayload);
   const now = Date.now();
   if (signature === lastInjectedSignature && (now - lastInjectedAt) < 1500) {
     return showStatus('Aguarde um instante antes de reenviar os mesmos dados.', 'error');
   }
 
-  if (!data.nomeCompleto && !data.cpf) return showStatus('Preencha ao menos nome ou CPF.', 'error');
+  if (!passageirosPayload.length) return showStatus('Preencha ao menos nome ou CPF.', 'error');
 
   try {
     injectInFlight = true;
@@ -186,31 +351,20 @@ $('btn-inject').addEventListener('click', async () => {
     if (isExtensionPage && targetTab.url.includes('test-form.html')) {
       // ─── Para test-form.html (extension page) ───
       console.log('[Popup] test-form.html detectado, salvando em storage...');
-      
-      // Salvar no storage para que test-form.js leia
-      const dataToSave = {
-        firstName: data.primeiroNome,
-        lastName: data.sobrenome,
-        cpf: data.cpf,
-        birthDate: data.dataNascimento,
-        nome: data.nomeCompleto,
-        dataNascimento: data.dataNascimento,
-        email: data.email,
-        telefone: data.telefone
-      };
-      
-      chrome.storage.local.set({ passageirosOCR: [dataToSave] }, () => {
+
+      // Salvar no storage para que test-form.js leia a lista completa
+      chrome.storage.local.set({ passageirosOCR: passageirosPayload }, () => {
         console.log('[Popup] Dados salvos no storage para test-form.js');
         // Enviar postMessage também para reloadear se necessário
         chrome.tabs.sendMessage(targetTab.id, { 
           type: 'RELOAD_FROM_STORAGE',
-          data: dataToSave
+          data: passageirosPayload
         }).catch(err => {
           console.log('[Popup] test-form.html não respondeu (esperado para extension page)');
         });
       });
       
-      showStatus('✓ Dados salvos no formulário!', 'success');
+      showStatus(`✓ ${passageirosPayload.length} passageiro(s) salvo(s) no formulário!`, 'success');
     } else if (isExtensionPage) {
       return showStatus('Abra a página do formulário e tente novamente.', 'error');
     } else {
@@ -222,10 +376,10 @@ $('btn-inject').addEventListener('click', async () => {
         func: (d) => {
           window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: d }));
         },
-        args: [data]
+        args: [passageirosPayload]
       });
 
-      showStatus('✓ Comando de preenchimento enviado!', 'success');
+      showStatus(`✓ Comando de preenchimento enviado para ${passageirosPayload.length} passageiro(s)!`, 'success');
     }
 
     lastInjectedSignature = signature;
@@ -240,22 +394,18 @@ $('btn-inject').addEventListener('click', async () => {
 });
 
 function mostrarDados(data) {
-  const nomeCompleto = data.nomeCompleto || data.nome || '';
-  const primeiroNome = data.primeiroNome || '';
-  const sobrenome = data.sobrenome || '';
-  
-  $('field-nome').value = primeiroNome || nomeCompleto;
-  $('field-sobrenome').value = sobrenome;
-  $('field-cpf').value  = data.cpf  ?? '';
-  $('field-data').value = data.dataNascimento ?? '';
-  const fieldEmail = $('field-email');
-  const fieldTelefone = $('field-telefone');
-  if (fieldEmail) fieldEmail.value = data.email ?? '';
-  if (fieldTelefone) fieldTelefone.value = data.telefone ?? '';
-  $('upload-section').classList.add('hidden');
-  $('result-section').classList.remove('hidden');
-  showStatus('Dados prontos! Revise e clique em "Preencher formulário".', 'success');
+  showPassengersData([data]);
 }
+
+['field-nome', 'field-sobrenome', 'field-cpf', 'field-data', 'field-email', 'field-telefone'].forEach((fieldId) => {
+  const input = $(fieldId);
+  if (!input) return;
+
+  input.addEventListener('input', () => {
+    persistPassengerSelecionado();
+    renderPassengerTabs();
+  });
+});
 
 function showStatus(msg, type = 'success') {
   const bar = $('status-bar');

@@ -142,6 +142,37 @@ function hideStatus() {
   if (resultStatus) resultStatus.style.display = 'none';
 }
 
+function sincronizarCamposDoPassageiroAtual() {
+  const atual = passageiros[passageiroAtual] || {};
+  passageiros[passageiroAtual] = {
+    ...atual,
+    nome: fieldNome ? fieldNome.value.trim() : (atual.nome || ''),
+    cpf: fieldCpf ? fieldCpf.value.trim() : (atual.cpf || ''),
+    dataNascimento: fieldData ? fieldData.value.trim() : (atual.dataNascimento || ''),
+    birthDate: fieldData ? fieldData.value.trim() : (atual.birthDate || atual.dataNascimento || ''),
+    genero: fieldGenero ? fieldGenero.value : (atual.genero || ''),
+    gender: fieldGenero ? fieldGenero.value : (atual.gender || atual.genero || ''),
+    nacionalidade: fieldNacionalidade ? fieldNacionalidade.value : (atual.nacionalidade || DEFAULT_NATIONALITY),
+    nationality: fieldNacionalidade ? fieldNacionalidade.value : (atual.nationality || atual.nacionalidade || DEFAULT_NATIONALITY),
+    email: fieldEmail ? fieldEmail.value.trim() : (atual.email || ''),
+    telefone: fieldTelefone ? fieldTelefone.value.trim() : (atual.telefone || '')
+  };
+}
+
+function proximoIndicePassageiro() {
+  const isEmpty = (p) => !(p?.nome || p?.cpf || p?.dataNascimento || p?.email || p?.telefone || p?.imagemDataUrl);
+
+  for (let i = passageiroAtual + 1; i < passageiros.length; i++) {
+    if (isEmpty(passageiros[i])) return i;
+  }
+
+  for (let i = 0; i < passageiroAtual; i++) {
+    if (isEmpty(passageiros[i])) return i;
+  }
+
+  return (passageiroAtual + 1) % passageiros.length;
+}
+
 // ─── Setup dos Event Listeners ───
 function setupEventListeners() {
   if (!dropZone) {
@@ -204,10 +235,11 @@ function setupEventListeners() {
   });
 
   btnUploadMore.addEventListener('click', () => {
-    previewBox.style.display = 'none';
-    dropZone.style.display = 'block';
+    sincronizarCamposDoPassageiroAtual();
+    passageiroAtual = proximoIndicePassageiro();
+    renderizarPassageiro(passageiroAtual);
     fileInput.value = '';
-    hideStatus();
+    showStatus(`Passageiro ${passageiroAtual + 1} selecionado para preenchimento.`, 'success');
   });
 
   btnFinish.addEventListener('click', () => {
@@ -244,6 +276,25 @@ function setupEventListeners() {
   if (fieldTelefone) {
     fieldTelefone.addEventListener('input', () => {
       passageiros[passageiroAtual].telefone = fieldTelefone.value;
+    });
+  }
+
+  if (fieldNome) {
+    fieldNome.addEventListener('input', () => {
+      passageiros[passageiroAtual].nome = fieldNome.value;
+    });
+  }
+
+  if (fieldCpf) {
+    fieldCpf.addEventListener('input', () => {
+      passageiros[passageiroAtual].cpf = fieldCpf.value;
+    });
+  }
+
+  if (fieldData) {
+    fieldData.addEventListener('input', () => {
+      passageiros[passageiroAtual].dataNascimento = fieldData.value;
+      passageiros[passageiroAtual].birthDate = fieldData.value;
     });
   }
 

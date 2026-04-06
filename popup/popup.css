@@ -113,6 +113,52 @@ header h1 {
     margin-bottom: 12px;
 }
 
+#passenger-switcher {
+    margin-bottom: 10px;
+}
+
+.passenger-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.passenger-tab {
+    min-width: 38px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.passenger-tab:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.passenger-tab.active {
+    background: rgba(99, 102, 241, 0.18);
+    border-color: var(--accent);
+    color: #c7d2fe;
+}
+
+.passenger-tab.filled {
+    color: var(--text);
+}
+
+.passenger-meta {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+}
+
 .field-group {
     margin-bottom: 10px;
 }
@@ -136,8 +182,43 @@ header h1 {
     transition: border-color 0.2s;
 }
 
-.field-group input:focus {
+.field-group select {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position:
+        calc(100% - 16px) calc(50% - 2px),
+        calc(100% - 11px) calc(50% - 2px);
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 30px;
+}
+
+.field-group input:focus,
+.field-group select:focus {
     border-color: var(--accent);
+    background-color: #202433;
+}
+
+.field-group input:hover,
+.field-group select:hover {
+    border-color: #3b4052;
+}
+
+.field-group input::placeholder {
+    color: var(--muted);
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────── */
@@ -150,7 +231,7 @@ header h1 {
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: opacity 0.15s, transform 0.1s;
+    transition: opacity 0.15s, transform 0.1s, box-shadow 0.2s, background 0.2s, border-color 0.2s;
     margin-top: 8px;
 }
 
@@ -162,10 +243,12 @@ header h1 {
 .btn-primary {
     background: var(--accent);
     color: #fff;
+    box-shadow: 0 8px 18px rgba(99, 102, 241, 0.18);
 }
 
 .btn-primary:hover {
     background: var(--accent-h);
+    box-shadow: 0 10px 22px rgba(99, 102, 241, 0.24);
 }
 
 .btn-secondary {
@@ -216,6 +299,34 @@ header h1 {
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
+}
+
+/* ── Small refinements for result layout ─────────────────────────── */
+#result-section {
+    padding-top: 2px;
+}
+
+#result-section .field-group + .field-group {
+    margin-top: 10px;
+}
+
+#passenger-switcher {
+    padding: 10px 10px 6px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(26, 29, 39, 0.65);
+}
+
+.passenger-tabs {
+    gap: 8px;
+}
+
+.passenger-tab {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.passenger-meta {
+    margin-top: 2px;
 }
 
 @keyframes spin {
