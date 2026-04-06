@@ -237,7 +237,9 @@ function parsePassengerData(text) {
     primeiroNome: nomeSeparado.primeiroNome,
     sobrenome: nomeSeparado.sobrenome,
     cpf: extractCPF(normalizedText),
-    dataNascimento: extractDataNascimento(normalizedText)
+    dataNascimento: extractDataNascimento(normalizedText),
+    genero: extractGenero(normalizedText),
+    nacionalidade: extractNacionalidade(normalizedText)
   };
 }
 
@@ -361,18 +363,160 @@ function extractCPF(text) {
 }
 
 function extractDataNascimento(text) {
-  // Formatos: 01/01/1990 | 01-01-1990 | 01.01.1990 | "NASC 01/01/1990"
-  const patterns = [
-    /(?:NASC(?:IMENTO)?|DOB|BORN|DT\.?\s*NASC)[:\s]*(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4})/,
-    /\b(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4})\b/
-  ];
+  const normalized = String(text || '').toUpperCase();
+  const lines = normalized
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) {
-      // Normaliza separadores para /
-      return match[1].replace(/[-\.]/g, '/');
+  const birthCtx = /\b(NASC(?:IMENTO)?|DATA\s+DE\s+NASCIMENTO|DT\.?\s*NASC|DOB|BORN)\b/;
+  const issueCtx = /\b(EXPEDICAO|DATA\s+DE\s+EXPEDICAO|EMISSAO|DATA\s+DE\s+EMISSAO|VALIDADE|VENCIMENTO|ISSUE)\b/;
+  const dateRegex = /\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/g;
+
+  const normalizeDate = (d, m, y) => `${d}/${m}/${y}`;
+  const getDateFromLine = (line) => {
+    if (!line) return null;
+    const match = line.match(/\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/);
+    if (!match) return null;
+    return normalizeDate(match[1], match[2], match[3]);
+  };
+
+  // 1) Prioridade máxima: data perto do rótulo de nascimento
+  for (let i = 0; i < lines.length; i++) {
+    if (!birthCtx.test(lines[i])) continue;
+
+    const nearby = [lines[i], lines[i + 1] || '', lines[i - 1] || ''];
+    for (const line of nearby) {
+      const date = getDateFromLine(line);
+      if (!date) continue;
+      if (issueCtx.test(line) && !birthCtx.test(line)) continue;
+      return date;
     }
   }
-  return null;
+
+  // 2) Fallback com pontuação por contexto
+  const candidates = [];
+  const currentYear = new Date().getFullYear();
+
+  lines.forEach((line, index) => {
+    const matches = Array.from(line.matchAll(dateRegex));
+    matches.forEach((m) => {
+      const dd = m[1];
+      const mm = m[2];
+      const yyyy = m[3];
+      const year = Number.parseInt(yyyy, 10);
+      let score = 0;
+
+      if (birthCtx.test(line)) score += 5;
+      if (issueCtx.test(line)) score -= 6;
+
+      const prev = lines[index - 1] || '';
+      const next = lines[index + 1] || '';
+      if (birthCtx.test(prev) || birthCtx.test(next)) score += 3;
+      if (issueCtx.test(prev) || issueCtx.test(next)) score -= 4;
+
+      if (year > currentYear) score -= 2;
+
+      candidates.push({
+        date: normalizeDate(dd, mm, yyyy),
+        score,
+        year
+      });
+    });
+  });
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.year - b.year; // em empate, tende a escolher a data mais antiga (mais provável para nascimento)
+  });
+
+  return candidates[0].date;
+}
+
+/**
+ * Extrai o Gênero / Sexo do documento
+ */
+function extractGenero(text) {
+  const textUpper = String(text || '').toUpperCase();
+
+  const normalizeToken = (value) => String(value || '')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '');
+
+  const mapGenero = (value) => {
+    const token = normalizeToken(value);
+    if (!token) return '';
+    if (token === 'M' || token.startsWith('MASC')) return 'Masculino';
+    if (token === 'F' || token.startsWith('FEM')) return 'Feminino';
+    return '';
+  };
+
+  const extractFromChunk = (chunk) => {
+    if (!chunk) return '';
+    const match = chunk.match(/\b(MASC(?:ULINO)?|FEM(?:ININO)?|M\b|F\b)\b/);
+    return mapGenero(match?.[1] || '');
+  };
+
+  // Padrão 1: "SEXO M", "SEXO: F", "SEXO MASCULINO", "SEX: M"
+  const matchDireto = textUpper.match(/\b(?:SEXO|SEX|GENERO|GENDER)\b[\s:.-]{0,8}(MASC(?:ULINO)?|FEM(?:ININO)?|M\b|F\b)/);
+  if (matchDireto) {
+    const mapped = mapGenero(matchDireto[1]);
+    if (mapped) return mapped;
+  }
+
+  // Padrão 2: Formato clássico de passaporte (M / M ou F / F)
+  const matchPassaporte = textUpper.match(/\b(M|F)\s*\/\s*(?:M|F)\b/);
+  if (matchPassaporte) {
+    return matchPassaporte[1] === 'M' ? 'Masculino' : 'Feminino';
+  }
+
+  const linhas = textUpper
+    .split(/\n+/)
+    .map((l) => l.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const labelRegex = /\b(SEXO|SEX|GENERO|GENDER)\b/;
+  for (let i = 0; i < linhas.length; i++) {
+    if (!labelRegex.test(linhas[i])) continue;
+
+    const currentTail = linhas[i].replace(/^.*\b(?:SEXO|SEX|GENERO|GENDER)\b[\s:.-]*/g, ' ').trim();
+    const chunks = [currentTail, linhas[i + 1] || '', linhas[i + 2] || ''];
+
+    for (const chunk of chunks) {
+      const mapped = extractFromChunk(chunk);
+      if (mapped) return mapped;
+    }
+  }
+
+  // Padrão 3: Apenas M/F em linha curta
+  for (const linha of linhas) {
+    const mapped = mapGenero(linha);
+    if (mapped) return mapped;
+  }
+
+  return '';
+}
+
+/**
+ * Extrai a Nacionalidade do documento
+ */
+function extractNacionalidade(text) {
+  const textUpper = String(text || '').toUpperCase();
+
+  // Padrão 1: "NACIONALIDADE BRASILEIRO", "NATIONALITY BRA"
+  const matchDireto = textUpper.match(/\b(?:NACIONALIDADE|NATIONALITY|NACIONALITY|NATURALIDADE)[\s:.-]*([A-Z]{3,24})\b/);
+  if (matchDireto) {
+    const nac = matchDireto[1];
+    if (nac.includes('BRASIL') || nac === 'BRA' || nac.startsWith('BRASILEIR')) return 'Brasil';
+    return nac.charAt(0) + nac.slice(1).toLowerCase();
+  }
+
+  // Padrão 2: palavras-chave brasileiras comuns
+  if (/\b(?:BRASILEIRA|BRASILEIRO|BRAZILIAN|BRASIL)\b/.test(textUpper)) {
+    return 'Brasil';
+  }
+
+  return '';
 }
