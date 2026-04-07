@@ -109,6 +109,7 @@ const btnFinish        = document.getElementById('btn-finish');
 const btnClearPassenger = document.getElementById('btn-clear-passenger'); // NOVO
 const fieldGenero      = document.getElementById('field-genero');       // CORRIGIDO: novo campo
 const fieldNacionalidade = document.getElementById('field-nacionalidade'); // CORRIGIDO: novo campo
+const btnPasteImage = document.getElementById('btn-paste-image');
 
 // Debug: verificar se elementos foram encontrados
 console.log('[Upload] dropZone:', dropZone);
@@ -211,6 +212,175 @@ function proximoIndicePassageiro() {
   return (passageiroAtual + 1) % passageiros.length;
 }
 
+function isImageLikeFile(file) {
+  const mimeType = String(file?.type || '').toLowerCase();
+  const fileName = String(file?.name || '').toLowerCase();
+
+  if (mimeType.startsWith('image/')) return true;
+
+  return /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)$/i.test(fileName);
+}
+
+async function readFileAsDataUrl(file) {
+  const toDataUrlFromBuffer = (buffer, mimeType) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+
+    return `data:${mimeType || 'application/octet-stream'};base64,${btoa(binary)}`;
+  };
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => {
+        reject(reader.error || new Error('Falha ao ler o arquivo com FileReader.'));
+      };
+
+      reader.readAsDataURL(file);
+    });
+  } catch (error) {
+    console.warn('[Upload] FileReader falhou, tentando fallback com arrayBuffer:', error);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      return toDataUrlFromBuffer(buffer, file.type);
+    } catch (arrayBufferError) {
+      console.warn('[Upload] arrayBuffer falhou, tentando fallback com slice():', arrayBufferError);
+
+      try {
+        const slicedBlob = file.slice(0, file.size, file.type || 'application/octet-stream');
+        const buffer = await slicedBlob.arrayBuffer();
+        return toDataUrlFromBuffer(buffer, file.type);
+      } catch (sliceError) {
+        console.warn('[Upload] Falha ao converter a imagem para data URL:', sliceError);
+        throw new Error('A imagem selecionada não pôde ser lida. Tente usar o botão para selecionar o arquivo, ou teste outra imagem.');
+      }
+    }
+  }
+}
+
+function getFileFromDropEvent(event) {
+  const fallbackFile = event.dataTransfer?.files?.[0] || null;
+  const items = Array.from(event.dataTransfer?.items || []);
+
+  const fileItem = items.find((item) => item.kind === 'file');
+  const directFile = fileItem?.getAsFile() || fallbackFile;
+  if (directFile && directFile.size > 0) return Promise.resolve(directFile);
+
+  const uriItem = items.find((item) => item.kind === 'string' && item.type === 'text/uri-list');
+  if (!uriItem) return Promise.resolve(directFile || null);
+
+  return new Promise((resolve) => {
+    uriItem.getAsString(async (uriListRaw) => {
+      try {
+        const firstUri = String(uriListRaw || '')
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith('#'))[0];
+
+        if (!firstUri) {
+          resolve(directFile || null);
+          return;
+        }
+
+        const response = await fetch(firstUri);
+        if (!response.ok) {
+          resolve(directFile || null);
+          return;
+        }
+
+        const blob = await response.blob();
+        const fallbackName = decodeURIComponent(firstUri.split('/').pop() || 'imagem-arrastada');
+        const fileFromUri = new File([blob], fallbackName, {
+          type: blob.type || 'application/octet-stream',
+          lastModified: Date.now()
+        });
+
+        resolve(fileFromUri);
+      } catch (error) {
+        console.warn('[Upload] Fallback uri-list falhou:', error);
+        resolve(directFile || null);
+      }
+    });
+  });
+}
+
+function isBlobUrl(value) {
+  return typeof value === 'string' && value.startsWith('blob:');
+}
+
+function revokePassengerImageUrl(index) {
+  const url = passageiros[index]?.imagemDataUrl;
+  if (isBlobUrl(url)) {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function cloneFile(file) {
+  return new File([file], file.name || 'imagem', {
+    type: file.type || 'application/octet-stream',
+    lastModified: file.lastModified || Date.now()
+  });
+}
+
+function loadImageFromUrl(imageUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Não foi possível carregar a imagem para OCR.'));
+    image.src = imageUrl;
+  });
+}
+
+async function imageUrlToCanvas(imageUrl) {
+  const image = await loadImageFromUrl(imageUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Não foi possível preparar o canvas para OCR.');
+  }
+
+  context.drawImage(image, 0, 0);
+  return canvas;
+}
+
+function extractImageFromClipboardData(clipboardData) {
+  const items = Array.from(clipboardData?.items || []);
+  const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+  return imageItem?.getAsFile() || null;
+}
+
+async function readClipboardImageViaApi() {
+  if (!navigator.clipboard?.read) {
+    throw new Error('O navegador não permite leitura direta da área de transferência.');
+  }
+
+  const clipboardItems = await navigator.clipboard.read();
+  for (const item of clipboardItems) {
+    const imageType = item.types.find((type) => type.startsWith('image/'));
+    if (!imageType) continue;
+
+    const blob = await item.getType(imageType);
+    return new File([blob], `imagem-colada.${imageType.split('/')[1] || 'png'}`, {
+      type: imageType,
+      lastModified: Date.now()
+    });
+  }
+
+  throw new Error('Nenhuma imagem foi encontrada na área de transferência.');
+}
+
 // ─── Setup dos Event Listeners ───
 function setupEventListeners() {
   if (!dropZone) {
@@ -232,24 +402,29 @@ function setupEventListeners() {
     }
   });
 
-  dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('drag-over');
+  // Drag-and-drop desativado temporariamente: manter apenas seleção manual.
+
+  document.addEventListener('paste', (event) => {
+    const pastedFile = extractImageFromClipboardData(event.clipboardData);
+    if (!pastedFile) return;
+
+    event.preventDefault();
+    showStatus('Imagem colada! Processando...', 'success');
+    handleFile(pastedFile);
   });
 
-  dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drag-over');
-  });
-
-  dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    const file = e.dataTransfer?.files?.[0];
-    if (file) {
-      console.log('[Upload] Arquivo arrastado:', file.name);
-      handleFile(file);
-    }
-  });
+  if (btnPasteImage) {
+    btnPasteImage.addEventListener('click', async () => {
+      try {
+        const file = await readClipboardImageViaApi();
+        showStatus('Imagem colada da área de transferência.', 'success');
+        handleFile(file);
+      } catch (error) {
+        console.warn('[Upload] Não foi possível colar imagem via botão:', error);
+        showStatus('Não foi possível colar imagem. Use Ctrl+V após copiar uma imagem.', 'error');
+      }
+    });
+  }
 
   btnChange.addEventListener('click', () => {
     previewBox.style.display = 'none';
@@ -401,8 +576,12 @@ async function runOCROnImage(imageDataUrl) {
     showStatus('Processando imagem com OCR...', 'success');
     console.log('[Upload] Iniciando OCR...');
 
+    const ocrSource = isBlobUrl(imageDataUrl)
+      ? await imageUrlToCanvas(imageDataUrl)
+      : imageDataUrl;
+
     // Recognize: executa OCR na imagem
-    const result = await ocrWorker.recognize(imageDataUrl);
+    const result = await ocrWorker.recognize(ocrSource);
     const rawText = result.data.text;
 
     console.log('[Upload] Texto bruto extraído:', rawText.substring(0, 200) + '...');
@@ -505,13 +684,29 @@ function sanitizeNomeCandidate(candidate) {
   // Evita capturar cabeçalhos como "GOVERNO FEDERAL ESTADO DA PARAIBA"
   if (institutionalScore >= 2) return null;
 
-  const cleaned = raw
+  let cleaned = raw
     .replace(/\b(NOME|NAME|PASSAGEIRO|TITULAR|COMPLETO|NOME\s+SOCIAL|SOCIAL\s+NAME)\b/g, ' ')
     .replace(/\b(FOTO|PHOTO|FOTOGRAFIA|ASSINATURA)\b.*$/g, '')
     .replace(/\b(CPF|DATA|NASC(?:IMENTO)?|NATURALIDADE|RG|DOC(?:UMENTO)?|VALIDADE|EMISSAO)\b.*$/g, '')
     .replace(/[^A-Z\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Remove sufixos curtos gerados por OCR (ex: "... MENDONCA LS A").
+  const removableTailTokens = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']);
+  const connectorTokens = new Set(['DA', 'DE', 'DO', 'DAS', 'DOS', 'E']);
+
+  let wordsForTailCleanup = cleaned.split(' ').filter(Boolean);
+  while (wordsForTailCleanup.length >= 4) {
+    const tail = wordsForTailCleanup[wordsForTailCleanup.length - 1];
+
+    const isSingleLetterNoise = removableTailTokens.has(tail);
+    const isTwoLetterNoise = /^[A-Z]{2}$/.test(tail) && !connectorTokens.has(tail);
+
+    if (!isSingleLetterNoise && !isTwoLetterNoise) break;
+    wordsForTailCleanup.pop();
+  }
+  cleaned = wordsForTailCleanup.join(' ').trim();
 
   const words = cleaned.split(' ').filter(Boolean);
   if (words.length < 2 || words.length > 6) return null;
@@ -751,26 +946,30 @@ function extractNacionalidade(text) {
 }
 
 function handleFile(file) {
-  if (!file.type.startsWith('image/')) return showStatus('Apenas imagens PNG, JPG ou WEBP.', 'error');
+  if (!isImageLikeFile(file)) return showStatus('Apenas imagens PNG, JPG, WEBP ou similares.', 'error');
   if (file.size > 5 * 1024 * 1024) return showStatus('Imagem muito grande. Limite: 5MB.', 'error');
 
+  const stableFile = cloneFile(file);
   const passageiroIndex = passageiroAtual;
+  console.log('[Upload] Arquivo recebido:', {
+    name: stableFile.name,
+    type: stableFile.type,
+    size: stableFile.size,
+    lastModified: stableFile.lastModified
+  });
 
-  const reader = new FileReader();
-  reader.onload  = (e) => {
-    const imageDataUrl = e.target.result;
+  revokePassengerImageUrl(passageiroIndex);
 
-    passageiros[passageiroIndex].imagemDataUrl = imageDataUrl;
-    if (passageiroIndex === passageiroAtual) {
-      atualizarPreviewPassageiro(passageiroIndex);
-    } else {
-      atualizarAbas();
-    }
+  const imageObjectUrl = URL.createObjectURL(stableFile);
+  passageiros[passageiroIndex].imagemDataUrl = imageObjectUrl;
 
-    processarImagemComOCR(imageDataUrl, passageiroIndex);
-  };
-  reader.onerror = ()  => { showSpinner(false); showStatus('Erro ao ler a imagem.', 'error'); };
-  reader.readAsDataURL(file);
+  if (passageiroIndex === passageiroAtual) {
+    atualizarPreviewPassageiro(passageiroIndex);
+  } else {
+    atualizarAbas();
+  }
+
+  processarImagemComOCR(imageObjectUrl, passageiroIndex);
 }
 
 /**
@@ -991,6 +1190,8 @@ function atualizarPreviewPassageiro(index) {
 // ─── Limpar passageiro atual ──────────────────────────────────────────────────
 
 function limparPassageiroAtual() {
+  revokePassengerImageUrl(passageiroAtual);
+
   passageiros[passageiroAtual] = {
     nome: '',
     firstName: '',
@@ -1075,33 +1276,57 @@ function finalizarEIrAoFormulario() {
   }, () => {
     console.log('[Upload] Dados salvos no storage:', passageirosPreenchidos);
     showStatus(`✓ ${passageirosPreenchidos.length} passageiro(s) salvo(s)! Enviando para a aba...`, 'success');
+
+    const concluirFluxo = () => {
+      chrome.tabs.getCurrent((currentTab) => {
+        if (currentTab?.id) {
+          chrome.tabs.remove(currentTab.id);
+        } else {
+          window.close();
+        }
+      });
+    };
+
+    const entregarDadosNaAba = () => {
+      chrome.tabs.sendMessage(
+        targetTabId,
+        { type: 'OCR_AUTOFILL', data: passageirosPreenchidos },
+        (response) => {
+          const lastError = chrome.runtime.lastError;
+
+          if (!lastError) {
+            chrome.tabs.update(targetTabId, { active: true });
+            concluirFluxo();
+            return;
+          }
+
+          console.warn('[Upload] sendMessage falhou, tentando executeScript:', lastError?.message || 'sem resposta');
+
+          chrome.scripting.executeScript({
+            target: { tabId: targetTabId, allFrames: true },
+            func: (dadosPassageiros) => {
+              window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: dadosPassageiros }));
+            },
+            args: [passageirosPreenchidos]
+          }, () => {
+            if (chrome.runtime.lastError) {
+              console.error('[Upload] Falha ao enviar os dados para a aba alvo:', chrome.runtime.lastError.message);
+              showStatus('Falha ao enviar para a aba do site. Os dados ficaram salvos localmente.', 'error');
+              return;
+            }
+
+            chrome.tabs.update(targetTabId, { active: true });
+            concluirFluxo();
+          });
+        }
+      );
+    };
     
     // Fechar/voltar após 1.2s
     setTimeout(() => {
       // Estratégia 1: Injetar diretamente na aba de origem (site real)
       if (Number.isInteger(targetTabId)) {
-        chrome.scripting.executeScript({
-          target: { tabId: targetTabId, allFrames: true },
-          func: (dadosPassageiros) => {
-            window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: dadosPassageiros }));
-          },
-          args: [passageirosPreenchidos]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.error('[Upload] Falha ao injetar na aba alvo:', chrome.runtime.lastError.message);
-            showStatus('Falha ao enviar para a aba do site. Tente novamente.', 'error');
-            return;
-          }
-
-          chrome.tabs.update(targetTabId, { active: true });
-          chrome.tabs.getCurrent((currentTab) => {
-            if (currentTab?.id) {
-              chrome.tabs.remove(currentTab.id);
-            } else {
-              window.close();
-            }
-          });
-        });
+        entregarDadosNaAba();
         return;
       }
 

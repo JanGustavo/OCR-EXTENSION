@@ -156,15 +156,6 @@
         background: var(--accent-light);
       }
 
-      #drop-zone.drag-over {
-        border-color: var(--accent-hover);
-        background: var(--accent-light);
-        box-shadow:
-          0 0 0 3px var(--accent-ring),
-          inset 0 0 20px rgba(var(--accent-rgb), 0.16);
-        transform: scale(1.01);
-      }
-
       .icon {
         font-size: 48px;
         margin-bottom: 16px;
@@ -197,6 +188,13 @@
 
       #file-input {
         display: none;
+      }
+
+      .paste-help {
+        margin-top: 12px;
+        color: var(--text-subtle);
+        font-size: 12px;
+        text-align: center;
       }
 
       #preview-box {
@@ -740,22 +738,26 @@
   <body>
     <div class="card">
       <h1 id="page-heading">✈ OCR Passagens</h1>
-      <p class="sub">
-        Selecione ou arraste uma imagem com os dados do passageiro
-      </p>
+      <p class="sub">Selecione uma imagem com os dados do passageiro</p>
 
       <!-- ─── Upload Section ─── -->
       <div id="upload-section" class="section">
         <div id="drop-zone">
           <div class="icon">📄</div>
-          <p>Arraste aqui ou clique para escolher</p>
-          <small>PNG, JPG ou WEBP • máx. 5MB</small>
+          <p>Clique para escolher uma imagem</p>
+          <small>PNG, JPG ou WEBP • máx. 5MB • ou cole com Ctrl+V</small>
         </div>
         <input
           type="file"
           id="file-input"
           accept="image/png,image/jpeg,image/webp"
         />
+        <button class="btn btn-secondary" id="btn-paste-image" type="button">
+          Colar imagem da área de transferência
+        </button>
+        <div class="paste-help">
+          Dica: copie uma imagem e pressione Ctrl+V nesta tela.
+        </div>
 
         <div id="preview-box">
           <img id="preview-img" alt="Preview" />

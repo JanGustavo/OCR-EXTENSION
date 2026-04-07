@@ -31,6 +31,20 @@ window.addEventListener('OCR_AUTOFILL', (event) => {
   iniciarInjecao(passageiros);
 });
 
+// Escuta mensagens diretas do upload/popup sem depender de executeScript.
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== 'OCR_AUTOFILL') return false;
+
+  const passageiros = Array.isArray(message.data) ? message.data : [message.data];
+  if (!passageiros.length) {
+    console.warn('[Injector] Mensagem OCR_AUTOFILL sem dados.');
+    return false;
+  }
+
+  iniciarInjecao(passageiros);
+  return false;
+});
+
 // ─── MOTOR DE INJEÇÃO MODULAR ────────────────────────────────────────────────
 
 // Função principal que será injetada na página atual
