@@ -17,21 +17,45 @@ const providerConfigMap = {
     heading: '✈ OCR Passagens Azul',
     generoHint: '(opcional — preenche o select da Azul)',
     nationality: 'Brasil',
-    showContactFields: false
+    showContactFields: false,
+    theme: {
+      accent: '#0068ff',
+      accentHover: '#0052cc',
+      accentRgb: '0, 104, 255',
+      accentAltRgb: '0, 184, 255',
+      headingFont: '"Bahnschrift", "Segoe UI", sans-serif',
+      bodyFont: '"Aptos", "Segoe UI Variable", "Segoe UI", sans-serif'
+    }
   },
   latam: {
     title: 'OCR Passagens — LATAM',
     heading: '✈ OCR Passagens LATAM',
     generoHint: '(opcional — preenche o select da LATAM)',
     nationality: 'Brasil',
-    showContactFields: true
+    showContactFields: true,
+    theme: {
+      accent: '#cc0a2f',
+      accentHover: '#9f0724',
+      accentRgb: '204, 10, 47',
+      accentAltRgb: '255, 122, 61',
+      headingFont: '"Franklin Gothic Medium", "Arial Narrow", sans-serif',
+      bodyFont: '"Trebuchet MS", "Segoe UI", sans-serif'
+    }
   },
   smiles: {
     title: 'OCR Passagens — Smiles',
     heading: '✈ OCR Passagens Smiles',
     generoHint: '(opcional — preenche o select da Smiles)',
     nationality: 'Brasil',
-    showContactFields: true
+    showContactFields: true,
+    theme: {
+      accent: '#ff6a00',
+      accentHover: '#e35700',
+      accentRgb: '255, 106, 0',
+      accentAltRgb: '255, 174, 0',
+      headingFont: '"Segoe Print", "Comic Sans MS", cursive',
+      bodyFont: '"Verdana", "Segoe UI", sans-serif'
+    }
   }
 };
 
@@ -111,6 +135,20 @@ function showSection(sectionId) {
 
 function aplicarConfiguracaoDoProvedor() {
   document.title = providerConfig.title;
+
+  const root = document.documentElement;
+  const theme = providerConfig.theme || {};
+
+  root.style.setProperty('--accent', theme.accent || '#4f46e5');
+  root.style.setProperty('--accent-hover', theme.accentHover || '#6366f1');
+  root.style.setProperty('--accent-rgb', theme.accentRgb || '79, 70, 229');
+  root.style.setProperty('--accent-alt-rgb', theme.accentAltRgb || '16, 185, 129');
+  root.style.setProperty('--font-heading', theme.headingFont || '"Segoe UI", sans-serif');
+  root.style.setProperty('--font-body', theme.bodyFont || '"Segoe UI", sans-serif');
+
+  if (document.body) {
+    document.body.dataset.provider = providerKey;
+  }
 
   if (pageHeading) {
     pageHeading.textContent = providerConfig.heading;
@@ -218,6 +256,7 @@ function setupEventListeners() {
     dropZone.style.display = 'block';
     fileInput.value = '';
     hideStatus();
+    fileInput.click();
   });
 
   if (btnSelectImage) {
