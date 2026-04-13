@@ -76,17 +76,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     tabId: sender?.tab?.id,
     frameId: sender?.frameId
   });
+  
   if (!passageiros.length) {
     console.warn('[Injector] Mensagem OCR_AUTOFILL sem dados.');
-    sendResponse?.({ ok: false, reason: 'empty-payload' });
+    sendResponse({ ok: false, reason: 'empty-payload' });
     return false;
   }
 
+  let responseEnviada = false;
+  
+  const timeout = setTimeout(() => {
+    if (!responseEnviada) {
+      console.warn('[Injector] Timeout ao aguardar resposta da injeção, enviando resposta de fallback');
+      try {
+        sendResponse({ ok: true, timeout: true });
+        responseEnviada = true;
+      } catch (err) {
+        console.warn('[Injector] Falha ao enviar resposta de timeout:', err);
+      }
+    }
+  }, 5000);
+
   iniciarInjecao(passageiros)
-    .then(() => sendResponse?.({ ok: true }))
+    .then(() => {
+      clearTimeout(timeout);
+      if (!responseEnviada) {
+        sendResponse({ ok: true });
+        responseEnviada = true;
+      }
+    })
     .catch((error) => {
+      clearTimeout(timeout);
       console.error('[Injector] Falha ao iniciar injeção via mensagem:', error);
-      sendResponse?.({ ok: false, error: error?.message || String(error) });
+      if (!responseEnviada) {
+        sendResponse({ ok: false, error: error?.message || String(error) });
+        responseEnviada = true;
+      }
     });
 
   // Mantém o canal aberto para a resposta assíncrona acima.

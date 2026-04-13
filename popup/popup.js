@@ -133,11 +133,35 @@ function normalizePassengerForInjection(data, shouldSendExtra) {
 }
 
 function persistPassengerSelecionado() {
-  if (!Array.isArray(passageirosOCR) || !passageirosOCR.length) return;
-  passageirosOCR[passageiroSelecionado] = {
-    ...(passageirosOCR[passageiroSelecionado] || {}),
-    ...getCurrentFormData()
-  };
+  if (!passageirosOCR[passageiroSelecionado]) {
+    passageirosOCR[passageiroSelecionado] = {};
+  }
+  const p = passageirosOCR[passageiroSelecionado];
+
+  const nomeDigitado = $('field-nome').value.trim();
+  const sobrenomeDigitado = $('field-sobrenome').value.trim();
+
+  // Sincroniza todos os aliases para que o splitNome da Azul.js entenda perfeitamente!
+  p.nome = `${nomeDigitado} ${sobrenomeDigitado}`.trim();
+  p.nomeCompleto = p.nome;
+  p.firstName = nomeDigitado;
+  p.primeiroNome = nomeDigitado;
+  p.lastName = sobrenomeDigitado;
+  p.sobrenome = sobrenomeDigitado;
+
+  p.cpf = $('field-cpf').value.trim();
+  p.dataNascimento = $('field-data').value.trim();
+  p.birthDate = p.dataNascimento;
+
+  if ($('field-email')) p.email = $('field-email').value.trim();
+  if ($('field-telefone')) p.telefone = $('field-telefone').value.trim();
+
+  // 🔥 Sincroniza género e nacionalidade
+  if ($('field-genero')) p.genero = $('field-genero').value;
+  if ($('field-nacionalidade')) p.nacionalidade = $('field-nacionalidade').value;
+
+  // Salva no storage para manter a consistência
+  chrome.storage.local.set({ passageirosOCR: passageirosOCR });
 }
 
 function renderPassengerTabs() {
@@ -324,12 +348,25 @@ $('btn-inject').addEventListener('click', async () => {
     telefone:          shouldSendExtra ? (fieldTelefone?.value.trim() || '') : ''
   };
 
-  const passageirosBase = passageirosOCR.length ? passageirosOCR : [dataAtual];
-  const passageirosPayload = passageirosBase
-    .map((p) => normalizePassengerForInjection(p, shouldSendExtra))
-    .filter((p) => hasPassengerData(p));
+  const passageirosPayload = passageirosOCR.length > 0
+    ? passageirosOCR
+    : [{
+        nome: `${$('field-nome').value.trim()} ${$('field-sobrenome').value.trim()}`.trim(),
+        firstName: $('field-nome').value.trim(),
+        primeiroNome: $('field-nome').value.trim(),
+        lastName: $('field-sobrenome').value.trim(),
+        sobrenome: $('field-sobrenome').value.trim(),
+        cpf: $('field-cpf').value.trim(),
+        dataNascimento: $('field-data').value.trim(),
+        birthDate: $('field-data').value.trim(),
+        email: $('field-email') ? $('field-email').value.trim() : '',
+        telefone: $('field-telefone') ? $('field-telefone').value.trim() : '',
+        // 🔥 Adiciona género e nacionalidade ao fallback
+        genero: $('field-genero') ? $('field-genero').value : '',
+        nacionalidade: $('field-nacionalidade') ? $('field-nacionalidade').value : 'Brasil'
+      }];
 
-  console.log(`${OCRDBG}[Popup] provider=${activeProvider} passageirosBase=${passageirosBase.length} payload=${passageirosPayload.length}`);
+  console.log(`${OCRDBG}[Popup] provider=${activeProvider} passageirosOCR=${passageirosOCR.length} payload=${passageirosPayload.length}`);
   passageirosPayload.forEach((p, idx) => {
     console.log(`${OCRDBG}[Popup] P${idx + 1}`, {
       nome: p.nomeCompleto,
