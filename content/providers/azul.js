@@ -10,6 +10,12 @@
  */
 (function registerAzulProvider(global) {
   global.OCRProviders = global.OCRProviders || {};
+  const OCRDBG = '[OCRDBG]';
+  const azulInjectState = global.__OCR_AZUL_INJECT_STATE__ || {
+    lastPathname: '',
+    lastSignature: ''
+  };
+  global.__OCR_AZUL_INJECT_STATE__ = azulInjectState;
 
   // ─── Suporte ───────────────────────────────────────────────────────────────
 
@@ -72,22 +78,112 @@
    * Passageiro 1 → passenger-identification-firstname-1
    * O código anterior fazia index + 1, quebrando todos os seletores.
    */
+  function extractTrailingIndex(testId, prefix) {
+    const raw = String(testId || '');
+    const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = raw.match(new RegExp(`^${escapedPrefix}(\\d+)$`));
+    if (!match) return Number.NaN;
+    return Number.parseInt(match[1], 10);
+  }
+
   function findField(fieldType, index) {
-    const selectors = {
-      firstName:        `[data-test-id="passenger-identification-firstname-${index}"]`,
-      lastName:         `[data-test-id="passenger-identification-lastname-${index}"]`,
-      cpf:              `[data-test-id="passenger-identification-cpf-or-tudoazul-${index}"]`,
-      birthDate:        `[data-test-id="passenger-identification-birthday-${index}"]`,
-      nationalityGroup: `[data-test-id="passenger-identification-nationality-${index}"]`,
-      genderGroup:      `[data-test-id="passenger-identification-gender-${index}"]`
+    const prefixes = {
+      firstName: 'passenger-identification-firstname-',
+      lastName: 'passenger-identification-lastname-',
+      cpf: 'passenger-identification-cpf-or-tudoazul-',
+      birthDate: 'passenger-identification-birthday-',
+      nationalityGroup: 'passenger-identification-nationality-',
+      genderGroup: 'passenger-identification-gender-'
     };
-    return document.querySelector(selectors[fieldType]) || null;
+
+    const prefix = prefixes[fieldType];
+    if (!prefix) return null;
+
+    // Tentativa direta (base 0)
+    let direct = document.querySelector(`[data-test-id="${prefix}${index}"]`);
+    if (direct) return direct;
+
+    // Fallback comum de alguns ambientes (base 1)
+    direct = document.querySelector(`[data-test-id="${prefix}${index + 1}"]`);
+    if (direct) return direct;
+
+    const all = Array.from(document.querySelectorAll(`[data-test-id^="${prefix}"]`));
+    if (!all.length) return null;
+
+    // Se os sufixos forem numéricos, tenta casar exatamente por índice (0/1-based).
+    const bySuffix = all
+      .map((el) => ({
+        el,
+        idx: extractTrailingIndex(el.getAttribute('data-test-id'), prefix)
+      }))
+      .filter((item) => Number.isFinite(item.idx));
+
+    const exactZeroBased = bySuffix.find((item) => item.idx === index)?.el;
+    if (exactZeroBased) return exactZeroBased;
+
+    const exactOneBased = bySuffix.find((item) => item.idx === index + 1)?.el;
+    if (exactOneBased) return exactOneBased;
+
+    // Último fallback: posição no DOM.
+    return all[index] || null;
+  }
+
+  async function ensurePassengerCardActive(index) {
+    let card = document.querySelector(`#passenger-card-${index}`)
+      || document.querySelector(`[data-test-id="passenger-card-${index}"]`)
+      || document.querySelector(`#passenger-card-${index + 1}`)
+      || document.querySelector(`[data-test-id="passenger-card-${index + 1}"]`);
+
+    if (!card) {
+      const cardCandidates = Array.from(document.querySelectorAll(
+        '[id^="passenger-card-"], [data-test-id^="passenger-card-"]'
+      ));
+      card = cardCandidates[index] || null;
+    }
+
+    if (!card) {
+      const accordionCandidates = Array.from(document.querySelectorAll(
+        '[data-test-id*="accordion-passenger"], [id*="accordion-passenger"], [data-test-id*="passenger"][role="button"]'
+      ));
+      const accordion = accordionCandidates[index] || null;
+      if (accordion) {
+        accordion.scrollIntoView({ block: 'center', inline: 'nearest' });
+        accordion.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        accordion.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await delay(220);
+      }
+      return;
+    }
+
+    card.scrollIntoView({ block: 'center', inline: 'nearest' });
+
+    const header = card.querySelector(
+      '.passenger-header, [class*="passenger-header"], .passenger, .passenger-type, button, [role="button"]'
+    );
+
+    if (header) {
+      header.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      header.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+
+    await delay(220);
   }
 
   // ─── Preenchimento de inputs React ────────────────────────────────────────
 
   function setReactValue(inputElement, value) {
     if (!inputElement || value == null || value === '') return false;
+
+    const currentValue = String(inputElement.value || '').trim();
+    const nextValue = String(value).trim();
+    const isCpfField = String(inputElement.getAttribute('data-test-id') || '').includes('cpf-or-tudoazul');
+    const currentComparable = isCpfField ? currentValue.replace(/\D/g, '') : currentValue;
+    const nextComparable = isCpfField ? nextValue.replace(/\D/g, '') : nextValue;
+
+    if (currentComparable === nextComparable) {
+      inputElement.dataset.ocrFilled = 'true';
+      return true;
+    }
 
     const nativeSetter = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype,
@@ -133,14 +229,13 @@
       .toLowerCase();
   }
 
-  /**
-   * BUG CORRIGIDO: fecha qualquer dropdown aberto antes de abrir o próximo,
-   * evitando conflito quando dois react-selects são preenchidos em sequência.
-   */
-  async function closeAnyOpenDropdown() {
-    // Clica no body para fechar menus flutuantes
-    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    await delay(80);
+  async function closeDropdownForGroup(groupEl) {
+    if (!groupEl) return;
+    const input = groupEl.querySelector('input[aria-autocomplete="list"], input[aria-label*="Editar"]');
+    if (input) {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }
+    await delay(60);
   }
 
   async function setReactSelectValue(groupEl, targetValue) {
@@ -149,19 +244,30 @@
     const control = groupEl.querySelector('.react-select__control');
     if (!control) return false;
 
-    await closeAnyOpenDropdown();
-
     // Abre o dropdown
     control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    control.click();
     await delay(200);
 
     const desired = normalizeText(targetValue);
 
-    // Busca entre as opções visíveis no DOM
-    const options = Array.from(
-      document.querySelectorAll('.react-select__option, [id*="react-select"][id*="option"]')
-    );
+    // Prioriza o listbox ligado ao input deste grupo; evita pegar opção de outro select.
+    const listboxId = groupEl
+      .querySelector('input[aria-controls]')
+      ?.getAttribute('aria-controls');
+
+    let options = [];
+    if (listboxId) {
+      const listbox = document.getElementById(listboxId);
+      if (listbox) {
+        options = Array.from(listbox.querySelectorAll('[role="option"], .react-select__option'));
+      }
+    }
+
+    if (!options.length) {
+      options = Array.from(
+        document.querySelectorAll('.react-select__option, [id*="react-select"][id*="option"]')
+      );
+    }
 
     const match = options.find((opt) =>
       normalizeText(opt.textContent).includes(desired)
@@ -185,7 +291,98 @@
       searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     }
 
-    await closeAnyOpenDropdown();
+    await closeDropdownForGroup(groupEl);
+    return false;
+  }
+
+  function getSelectedReactSelectText(groupEl) {
+    if (!groupEl) return '';
+
+    const hiddenInputValue = String(
+      groupEl.querySelector('input[type="hidden"]')?.value || ''
+    ).trim();
+    if (hiddenInputValue) return hiddenInputValue;
+
+    const singleValueText = String(
+      groupEl.querySelector('.react-select__single-value')?.textContent || ''
+    ).trim();
+    if (singleValueText) return singleValueText;
+
+    return '';
+  }
+
+  function isExpectedSelectValue(groupEl, targetValue) {
+    const selected = normalizeText(getSelectedReactSelectText(groupEl));
+    const expected = normalizeText(targetValue);
+    if (!selected || !expected) return false;
+    return selected.includes(expected) || expected.includes(selected);
+  }
+
+  async function setReactSelectValueWithRetry(groupEl, targetValue, maxAttempts = 3) {
+    if (!groupEl || !targetValue) return false;
+
+    const fieldType = String(groupEl.getAttribute('data-test-id') || 'unknown');
+    console.log(`${OCRDBG}[Azul] select:start`, {
+      fieldType,
+      targetValue,
+      atual: getSelectedReactSelectText(groupEl)
+    });
+
+    if (isExpectedSelectValue(groupEl, targetValue)) {
+      console.log(`${OCRDBG}[Azul] select:already-ok`, {
+        fieldType,
+        atual: getSelectedReactSelectText(groupEl)
+      });
+      return true;
+    }
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await setReactSelectValue(groupEl, targetValue);
+      await delay(120 + attempt * 120);
+
+      console.log(`${OCRDBG}[Azul] select:attempt`, {
+        fieldType,
+        attempt,
+        atual: getSelectedReactSelectText(groupEl)
+      });
+
+      if (isExpectedSelectValue(groupEl, targetValue)) {
+        console.log(`${OCRDBG}[Azul] select:ok`, {
+          fieldType,
+          attempt,
+          atual: getSelectedReactSelectText(groupEl)
+        });
+        return true;
+      }
+    }
+
+    // Fallback final: força digitação no input editável do react-select e confirma.
+    const forcedInput = groupEl.querySelector('input[aria-autocomplete="list"], input[aria-label*="Editar"]');
+    if (forcedInput) {
+      setReactValue(forcedInput, targetValue);
+      forcedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await delay(220);
+
+      console.log(`${OCRDBG}[Azul] select:forced-input`, {
+        fieldType,
+        atual: getSelectedReactSelectText(groupEl)
+      });
+
+      if (isExpectedSelectValue(groupEl, targetValue)) {
+        console.log(`${OCRDBG}[Azul] select:ok-after-forced`, {
+          fieldType,
+          atual: getSelectedReactSelectText(groupEl)
+        });
+        return true;
+      }
+    }
+
+    console.warn(`${OCRDBG}[Azul] select:failed`, {
+      fieldType,
+      targetValue,
+      atual: getSelectedReactSelectText(groupEl)
+    });
+
     return false;
   }
 
@@ -193,6 +390,32 @@
 
   async function injetarAzul(passageiros, helpers) {
     const { highlightFilledFields } = helpers;
+
+    const currentPathname = window.location.pathname;
+    const payloadSignature = JSON.stringify((Array.isArray(passageiros) ? passageiros : [passageiros]).map((p) => ({
+      nome: String(p?.nome || p?.nomeCompleto || `${p?.firstName || ''} ${p?.lastName || ''}` || '').trim(),
+      cpf: String(p?.cpf || '').replace(/\D/g, ''),
+      dataNascimento: String(p?.dataNascimento || p?.birthDate || '').trim(),
+      genero: String(p?.genero || p?.gender || '').trim(),
+      nacionalidade: String(p?.nacionalidade || p?.nationality || '').trim()
+    })));
+
+    if (
+      azulInjectState.lastPathname === currentPathname &&
+      azulInjectState.lastSignature === payloadSignature
+    ) {
+      console.warn('[Azul] Reinjeção idêntica na mesma rota detectada; ignorando para evitar efeitos colaterais.');
+      return;
+    }
+
+    azulInjectState.lastPathname = currentPathname;
+    azulInjectState.lastSignature = payloadSignature;
+
+    console.log(`${OCRDBG}[Azul] inject:start`, {
+      pathname: currentPathname,
+      total: passageiros.length,
+      signature: payloadSignature
+    });
 
     for (let index = 0; index < passageiros.length; index++) {
       const passageiro = passageiros[index];
@@ -204,6 +427,8 @@
         passageiro.cpf || passageiro.dataNascimento || passageiro.birthDate
       );
       if (!temDados) continue;
+
+      await ensurePassengerCardActive(index);
 
       // ── Aguarda os campos aparecerem no DOM (até 1s) ──
       let encontrou = false;
@@ -245,6 +470,15 @@
         primeiroNome, sobrenome, cpf, dataNascimento, genero, nacionalidade
       });
 
+      console.log(`${OCRDBG}[Azul] P${index + 1} payload`, {
+        primeiroNome,
+        sobrenome,
+        cpf,
+        dataNascimento,
+        genero,
+        nacionalidade
+      });
+
       // ── Campos de texto (paralelos) ──
       const tarefasTexto = [];
 
@@ -266,20 +500,52 @@
 
       await Promise.allSettled(tarefasTexto);
 
+      // Alguns campos (principalmente do 1o passageiro) podem re-renderizar após CPF/data.
+      await delay(450);
+
       // ── React-Selects (sequenciais para evitar conflito de menus) ──
       const campoNacionalidade = findField('nationalityGroup', index);
       if (campoNacionalidade) {
-        await setReactSelectValue(campoNacionalidade, nacionalidade);
+        await setReactSelectValueWithRetry(campoNacionalidade, nacionalidade);
         await delay(150);
+      } else {
+        console.warn(`${OCRDBG}[Azul] P${index + 1} nationalityGroup não encontrado`);
       }
 
       // Só preenche gênero se o valor vier explícito
       if (genero) {
         const campoGenero = findField('genderGroup', index);
         if (campoGenero) {
-          await setReactSelectValue(campoGenero, genero);
+          await setReactSelectValueWithRetry(campoGenero, genero);
           await delay(150);
+        } else {
+          console.warn(`${OCRDBG}[Azul] P${index + 1} genderGroup não encontrado`);
         }
+      }
+
+      // A Azul pode re-renderizar o card após validações assíncronas (ex.: CPF 403),
+      // limpando selects; revalida e reaplica uma vez após estabilização.
+      await delay(900);
+      await ensurePassengerCardActive(index);
+
+      const campoNacionalidadeFinal = findField('nationalityGroup', index);
+      if (campoNacionalidadeFinal && !isExpectedSelectValue(campoNacionalidadeFinal, nacionalidade)) {
+        await setReactSelectValueWithRetry(campoNacionalidadeFinal, nacionalidade, 2);
+      }
+
+      console.log(`${OCRDBG}[Azul] P${index + 1} final`, {
+        nacionalidadeAtual: campoNacionalidadeFinal ? getSelectedReactSelectText(campoNacionalidadeFinal) : '(nao-encontrado)'
+      });
+
+      if (genero) {
+        const campoGeneroFinal = findField('genderGroup', index);
+        if (campoGeneroFinal && !isExpectedSelectValue(campoGeneroFinal, genero)) {
+          await setReactSelectValueWithRetry(campoGeneroFinal, genero, 2);
+        }
+
+        console.log(`${OCRDBG}[Azul] P${index + 1} final`, {
+          generoAtual: campoGeneroFinal ? getSelectedReactSelectText(campoGeneroFinal) : '(nao-encontrado)'
+        });
       }
     }
 

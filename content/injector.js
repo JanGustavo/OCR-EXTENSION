@@ -20,6 +20,34 @@ function getProviderForCurrentUrl() {
   return providers.find((provider) => provider.supports(hostname)) || null;
 }
 
+const OCRDBG = '[OCRDBG]';
+
+const OCR_INJECT_DEDUPE_WINDOW_MS = 4000;
+const ocrInjectorState = window.__OCR_INJECTOR_STATE__ || {
+  inFlight: false,
+  lastSignature: '',
+  lastInjectAt: 0
+};
+window.__OCR_INJECTOR_STATE__ = ocrInjectorState;
+
+function buildPassengersSignature(passageiros) {
+  try {
+    const normalized = (Array.isArray(passageiros) ? passageiros : [passageiros])
+      .filter(Boolean)
+      .map((p, idx) => ({
+        idx,
+        nome: String(p.nome || p.nomeCompleto || `${p.firstName || ''} ${p.lastName || ''}` || '').trim(),
+        cpf: String(p.cpf || '').replace(/\D/g, ''),
+        dataNascimento: String(p.dataNascimento || p.birthDate || '').trim()
+      }));
+
+    return JSON.stringify(normalized);
+  } catch (err) {
+    console.warn('[Injector] Falha ao gerar assinatura de dedupe:', err);
+    return `fallback:${Date.now()}`;
+  }
+}
+
 // ─── Inicialização ──────────────────────────────────────────────────────────
 
 // Escuta o evento disparado pelo Service Worker via chrome.scripting.executeScript
@@ -28,27 +56,47 @@ window.addEventListener('OCR_AUTOFILL', (event) => {
   if (!payload) return console.warn('[Injector] Dados de OCR ausentes.');
 
   const passageiros = Array.isArray(payload) ? payload : [payload];
-  iniciarInjecao(passageiros);
+  console.log(`${OCRDBG}[Injector] Evento OCR_AUTOFILL recebido`, {
+    total: passageiros.length,
+    origem: 'window-event'
+  });
+  iniciarInjecao(passageiros).catch((error) => {
+    console.error('[Injector] Falha ao iniciar injeção via evento:', error);
+  });
 });
 
 // Escuta mensagens diretas do upload/popup sem depender de executeScript.
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'OCR_AUTOFILL') return false;
 
   const passageiros = Array.isArray(message.data) ? message.data : [message.data];
+  console.log(`${OCRDBG}[Injector] Mensagem OCR_AUTOFILL recebida`, {
+    total: passageiros.length,
+    origem: 'runtime-message',
+    tabId: sender?.tab?.id,
+    frameId: sender?.frameId
+  });
   if (!passageiros.length) {
     console.warn('[Injector] Mensagem OCR_AUTOFILL sem dados.');
+    sendResponse?.({ ok: false, reason: 'empty-payload' });
     return false;
   }
 
-  iniciarInjecao(passageiros);
-  return false;
+  iniciarInjecao(passageiros)
+    .then(() => sendResponse?.({ ok: true }))
+    .catch((error) => {
+      console.error('[Injector] Falha ao iniciar injeção via mensagem:', error);
+      sendResponse?.({ ok: false, error: error?.message || String(error) });
+    });
+
+  // Mantém o canal aberto para a resposta assíncrona acima.
+  return true;
 });
 
 // ─── MOTOR DE INJEÇÃO MODULAR ────────────────────────────────────────────────
 
 // Função principal que será injetada na página atual
-function iniciarInjecao(passageiros) {
+async function iniciarInjecao(passageiros) {
   const provider = getProviderForCurrentUrl();
 
   if (!provider) {
@@ -56,25 +104,58 @@ function iniciarInjecao(passageiros) {
     return;
   }
 
+  const signature = `${provider.id}:${buildPassengersSignature(passageiros)}`;
+  const now = Date.now();
+
+  console.log(`${OCRDBG}[Injector] iniciarInjecao`, {
+    provider: provider.id,
+    signature,
+    inFlight: ocrInjectorState.inFlight,
+    deltaMs: now - (ocrInjectorState.lastInjectAt || 0)
+  });
+
+  if (
+    ocrInjectorState.lastSignature === signature &&
+    (now - ocrInjectorState.lastInjectAt) < OCR_INJECT_DEDUPE_WINDOW_MS
+  ) {
+    console.warn('[Injector] Injeção duplicada detectada, ignorando.');
+    return;
+  }
+
+  if (ocrInjectorState.inFlight && ocrInjectorState.lastSignature === signature) {
+    console.warn('[Injector] Injeção em andamento para o mesmo payload, ignorando.');
+    return;
+  }
+
+  ocrInjectorState.inFlight = true;
+  ocrInjectorState.lastSignature = signature;
+  ocrInjectorState.lastInjectAt = now;
+
   console.log(`[OCR] Provider detectado: ${provider.id}. Iniciando módulo...`);
 
-  if (typeof provider.inject === 'function') {
-    provider.inject(passageiros, {
-      fillForm,
-      highlightFilledFields,
-      fillField
-    });
-    return;
-  }
+  try {
+    if (typeof provider.inject === 'function') {
+      await Promise.resolve(
+        provider.inject(passageiros, {
+          fillForm,
+          highlightFilledFields,
+          fillField
+        })
+      );
+      return;
+    }
 
-  // Fallback para providers ainda sem motor dedicado
-  const primeiroPassageiro = passageiros.find((p) => p && (p.nome || p.firstName || p.cpf || p.dataNascimento || p.birthDate));
-  if (!primeiroPassageiro) {
-    console.warn('[Injector] Nenhum passageiro com dados para injeção.');
-    return;
-  }
+    // Fallback para providers ainda sem motor dedicado
+    const primeiroPassageiro = passageiros.find((p) => p && (p.nome || p.firstName || p.cpf || p.dataNascimento || p.birthDate));
+    if (!primeiroPassageiro) {
+      console.warn('[Injector] Nenhum passageiro com dados para injeção.');
+      return;
+    }
 
-  fillForm(primeiroPassageiro, provider.selectors, provider.id);
+    fillForm(primeiroPassageiro, provider.selectors, provider.id);
+  } finally {
+    ocrInjectorState.inFlight = false;
+  }
 }
 
 // ─── Lógica de preenchimento ────────────────────────────────────────────────

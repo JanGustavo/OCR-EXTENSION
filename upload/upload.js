@@ -174,10 +174,10 @@ function aplicarConfiguracaoDoProvedor() {
 }
 
 function hideStatus() {
-  const uploadStatus = document.querySelector('#upload-section #status');
+  const uploadStatus = document.getElementById('upload-status');
   if (uploadStatus) uploadStatus.style.display = 'none';
   
-  const resultStatus = document.querySelector('#result-section #status');
+  const resultStatus = document.getElementById('result-status');
   if (resultStatus) resultStatus.style.display = 'none';
 }
 
@@ -1164,6 +1164,7 @@ function renderizarResumoPassageiros() {
     card.appendChild(status);
 
     card.addEventListener('click', () => {
+      sincronizarCamposDoPassageiroAtual();
       passageiroAtual = index;
       renderizarPassageiro(index);
     });
@@ -1230,20 +1231,40 @@ function limparPassageiroAtual() {
 
 // Finalizar e salvar os dados dos 9 passageiros
 function finalizarEIrAoFormulario() {
+  // Sincroniza os campos visíveis da tela para o passageiro atual antes do payload.
+  sincronizarCamposDoPassageiroAtual();
+
   // Filtrar apenas os passageiros com dados e normalizar formato
   const passageirosPreenchidos = passageiros
-    .filter((p) => p.nome !== '' || p.cpf !== '' || p.firstName || p.lastName)
-    .map((p) => {
-      const nomeCompleto = (p.nome || `${p.firstName || ''} ${p.lastName || ''}`.trim()).trim();
-      const nomeParts = nomeCompleto.split(/\s+/).filter(Boolean);
-      const firstName = p.firstName || nomeParts[0] || '';
-      const lastName  = p.lastName  || nomeParts.slice(1).join(' ') || '';
+    .filter((p) => {
+      const nome = String(p.nome || p.nomeCompleto || '').trim();
+      const primeiroNome = String(p.firstName || p.primeiroNome || '').trim();
+      const sobrenome = String(p.lastName || p.sobrenome || '').trim();
+      const cpf = String(p.cpf || '').trim();
+      const dataNascimento = String(p.dataNascimento || p.birthDate || '').trim();
 
-      // CORRIGIDO: lê genero e nacionalidade dos selects antes de salvar
-      const generoAtual       = fieldGenero       ? fieldGenero.value        : (p.genero       || '');
-      const nacionalidadeAtual = fieldNacionalidade ? fieldNacionalidade.value : (p.nacionalidade || DEFAULT_NATIONALITY);
-      const emailAtual        = fieldEmail        ? fieldEmail.value.trim()    : (p.email      || '');
-      const telefoneAtual     = fieldTelefone     ? fieldTelefone.value.trim() : (p.telefone   || '');
+      return Boolean(nome || primeiroNome || sobrenome || cpf || dataNascimento);
+    })
+    .map((p) => {
+      const nomeCompleto = (
+        p.nome ||
+        p.nomeCompleto ||
+        `${p.firstName || p.primeiroNome || ''} ${p.lastName || p.sobrenome || ''}`.trim()
+      ).trim();
+      const nomeParts = nomeCompleto.split(/\s+/).filter(Boolean);
+      const firstName = p.firstName || p.primeiroNome || nomeParts[0] || '';
+      const lastName  = p.lastName  || p.sobrenome || nomeParts.slice(1).join(' ') || '';
+
+      // BUG CORRIGIDO: o .map() itera todos os passageiros, mas fieldGenero/fieldNacionalidade
+      // só refletem o passageiro ATUALMENTE VISÍVEL na tela. Usar o valor do DOM para todos
+      // fazia o P1 herdar o gênero do último passageiro visualizado, e no fluxo do popup
+      // (onde o usuário não toca nos selects) chegava sempre vazio para o P1.
+      // Solução: sempre ler do objeto p[]. Os listeners de 'change' já sincronizam
+      // o array em tempo real quando o usuário edita — aqui só colhemos o que já está salvo.
+      const generoAtual        = p.genero        || p.gender       || '';
+      const nacionalidadeAtual = p.nacionalidade || p.nationality  || DEFAULT_NATIONALITY;
+      const emailAtual         = p.email         || '';
+      const telefoneAtual      = p.telefone      || '';
 
       const emailFinal = providerConfig.showContactFields ? emailAtual : '';
       const telefoneFinal = providerConfig.showContactFields ? telefoneAtual : '';
@@ -1303,7 +1324,7 @@ function finalizarEIrAoFormulario() {
           console.warn('[Upload] sendMessage falhou, tentando executeScript:', lastError?.message || 'sem resposta');
 
           chrome.scripting.executeScript({
-            target: { tabId: targetTabId, allFrames: true },
+            target: { tabId: targetTabId },
             func: (dadosPassageiros) => {
               window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: dadosPassageiros }));
             },
@@ -1344,7 +1365,7 @@ function showSpinner(v) { spinner.style.display = v ? 'flex' : 'none'; }
 
 function showStatus(msg, type) {
   // Status da secção de upload
-  const uploadStatus = document.querySelector('#upload-section #status');
+  const uploadStatus = document.getElementById('upload-status');
   if (uploadStatus) {
     uploadStatus.textContent = msg;
     uploadStatus.className = type;
@@ -1352,7 +1373,7 @@ function showStatus(msg, type) {
   }
   
   // Status da secção de resultado
-  const resultStatus = document.querySelector('#result-section #status');
+  const resultStatus = document.getElementById('result-status');
   if (resultStatus) {
     resultStatus.textContent = msg;
     resultStatus.className = type;

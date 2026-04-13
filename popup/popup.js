@@ -1,4 +1,5 @@
 const $ = (id) => document.getElementById(id);
+const OCRDBG = '[OCRDBG]';
 let injectInFlight = false;
 let lastInjectedSignature = '';
 let lastInjectedAt = 0;
@@ -328,6 +329,17 @@ $('btn-inject').addEventListener('click', async () => {
     .map((p) => normalizePassengerForInjection(p, shouldSendExtra))
     .filter((p) => hasPassengerData(p));
 
+  console.log(`${OCRDBG}[Popup] provider=${activeProvider} passageirosBase=${passageirosBase.length} payload=${passageirosPayload.length}`);
+  passageirosPayload.forEach((p, idx) => {
+    console.log(`${OCRDBG}[Popup] P${idx + 1}`, {
+      nome: p.nomeCompleto,
+      cpf: p.cpf,
+      dataNascimento: p.dataNascimento,
+      genero: p.genero || p.gender || '',
+      nacionalidade: p.nacionalidade || p.nationality || ''
+    });
+  });
+
   const signature = JSON.stringify(passageirosPayload);
   const now = Date.now();
   if (signature === lastInjectedSignature && (now - lastInjectedAt) < 1500) {
@@ -369,15 +381,36 @@ $('btn-inject').addEventListener('click', async () => {
       return showStatus('Abra a página do formulário e tente novamente.', 'error');
     } else {
       // ─── Para páginas de conteúdo normal ───
-      console.log('[Popup] Avisando a página para iniciar a injeção...');
-      
-      await chrome.scripting.executeScript({
-        target: { tabId: targetTab.id, allFrames: true },
-        func: (d) => {
-          window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: d }));
-        },
-        args: [passageirosPayload]
+      console.log('[Popup] Tentando enviar payload via sendMessage...');
+
+      const sendMessageResult = await new Promise((resolve) => {
+        chrome.tabs.sendMessage(
+          targetTab.id,
+          { type: 'OCR_AUTOFILL', data: passageirosPayload },
+          (response) => {
+            const lastError = chrome.runtime.lastError;
+            if (lastError) {
+              resolve({ ok: false, reason: lastError.message });
+              return;
+            }
+            resolve({ ok: true, response });
+          }
+        );
       });
+
+      if (!sendMessageResult.ok) {
+        console.warn('[Popup] sendMessage falhou, tentando executeScript:', sendMessageResult.reason || 'sem resposta');
+
+        await chrome.scripting.executeScript({
+          target: { tabId: targetTab.id },
+          func: (d) => {
+            window.dispatchEvent(new CustomEvent('OCR_AUTOFILL', { detail: d }));
+          },
+          args: [passageirosPayload]
+        });
+      } else {
+        console.log(`${OCRDBG}[Popup] sendMessage ok`, sendMessageResult.response || null);
+      }
 
       showStatus(`✓ Comando de preenchimento enviado para ${passageirosPayload.length} passageiro(s)!`, 'success');
     }
