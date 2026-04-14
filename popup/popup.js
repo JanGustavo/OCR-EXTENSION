@@ -80,6 +80,34 @@ function splitNomeSobrenome(nomeCompleto) {
   };
 }
 
+function normalizeGenderValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const lower = raw.toLowerCase();
+  if (['male', 'm', 'masculino', 'masc', 'homem'].includes(lower)) return 'Masculino';
+  if (['female', 'f', 'feminino', 'fem', 'mulher'].includes(lower)) return 'Feminino';
+
+  if (lower.startsWith('masc')) return 'Masculino';
+  if (lower.startsWith('fem')) return 'Feminino';
+  return raw;
+}
+
+function logGeneroState(label = '') {
+  const fieldGenero = $('field-genero');
+  const idx = passageiroSelecionado + 1;
+  if (fieldGenero) {
+    const htmlValue = fieldGenero.value;
+    const storageValue = passageirosOCR[passageiroSelecionado]?.genero || '';
+    console.log(`${OCRDBG}[Popup] ${label} P${idx} genero state:`, {
+      htmlFieldValue: htmlValue,
+      storageGenero: storageValue,
+      storageGender: passageirosOCR[passageiroSelecionado]?.gender || '',
+      normalized: normalizeGenderValue(htmlValue)
+    });
+  }
+}
+
 function setFormData(data) {
   const nomeCompleto = data?.nomeCompleto || data?.nome || '';
   const split = splitNomeSobrenome(nomeCompleto);
@@ -92,7 +120,7 @@ function setFormData(data) {
   $('field-data').value = data?.dataNascimento ?? data?.birthDate ?? '';
   const fieldGenero = $('field-genero');
   const fieldNacionalidade = $('field-nacionalidade');
-  if (fieldGenero) fieldGenero.value = data?.genero ?? data?.gender ?? '';
+  if (fieldGenero) fieldGenero.value = normalizeGenderValue(data?.genero ?? data?.gender ?? '');
   if (fieldNacionalidade) fieldNacionalidade.value = data?.nacionalidade ?? data?.nationality ?? 'Brasil';
 
   const fieldEmail = $('field-email');
@@ -112,6 +140,7 @@ function normalizePassengerForInjection(data, shouldSendExtra) {
   const primeiroNome = String(data?.primeiroNome || data?.firstName || split.primeiroNome || '').trim();
   const sobrenome = String(data?.sobrenome || data?.lastName || split.sobrenome || '').trim();
   const nomeCompleto = String(`${primeiroNome} ${sobrenome}`.trim() || nomeCompletoBase).trim();
+  const generoNormalizado = normalizeGenderValue(data?.genero || data?.gender || data?.sexo || '');
 
   return {
     primeiroNome,
@@ -123,8 +152,8 @@ function normalizePassengerForInjection(data, shouldSendExtra) {
     cpf: String(data?.cpf || '').trim(),
     dataNascimento: String(data?.dataNascimento || data?.birthDate || '').trim(),
     birthDate: String(data?.birthDate || data?.dataNascimento || '').trim(),
-    genero: String(data?.genero || data?.gender || '').trim(),
-    gender: String(data?.gender || data?.genero || '').trim(),
+    genero: String(generoNormalizado || '').trim(),
+    gender: String(generoNormalizado || '').trim(),
     nacionalidade: String(data?.nacionalidade || data?.nationality || '').trim(),
     nationality: String(data?.nationality || data?.nacionalidade || '').trim(),
     email: shouldSendExtra ? String(data?.email || '').trim() : '',
@@ -157,8 +186,23 @@ function persistPassengerSelecionado() {
   if ($('field-telefone')) p.telefone = $('field-telefone').value.trim();
 
   // 🔥 Sincroniza género e nacionalidade
-  if ($('field-genero')) p.genero = $('field-genero').value;
-  if ($('field-nacionalidade')) p.nacionalidade = $('field-nacionalidade').value;
+  const fieldGenero = $('field-genero');
+  const fieldNacionalidade = $('field-nacionalidade');
+  
+  if (fieldGenero) {
+    const genero = normalizeGenderValue(fieldGenero.value);
+    const rawValue = fieldGenero.value;
+    p.genero = genero;
+    p.gender = genero;
+    if (rawValue) {
+      console.log(`${OCRDBG}[Popup] persistPassenger P${passageiroSelecionado + 1} genero:`, {
+        rawFieldValue: rawValue,
+        normalizedTo: genero
+      });
+    }
+  }
+  
+  if (fieldNacionalidade) p.nacionalidade = fieldNacionalidade.value;
 
   // Salva no storage para manter a consistência
   chrome.storage.local.set({ passageirosOCR: passageirosOCR });
@@ -187,8 +231,11 @@ function renderPassengerTabs() {
 
     btn.addEventListener('click', () => {
       persistPassengerSelecionado();
+      console.log(`${OCRDBG}[Popup] Abas: P${passageiroSelecionado + 1} persistido, agora exibindo P${index + 1}`);
+      logGeneroState('antes de switch para P' + (index + 1));
       passageiroSelecionado = index;
       setFormData(passageirosOCR[index] || {});
+      logGeneroState('após setFormData de P' + (index + 1));
       renderPassengerTabs();
       showStatus(`Editando passageiro P${index + 1}.`, 'success');
     });
@@ -206,7 +253,18 @@ function showPassengersData(passageiros) {
   const firstWithData = passageirosOCR.findIndex((p) => hasPassengerData(p));
   passageiroSelecionado = firstWithData >= 0 ? firstWithData : 0;
 
+  console.log(`${OCRDBG}[Popup] showPassengersData carregou ${passageirosOCR.length} passageiros`);
+  passageirosOCR.forEach((p, idx) => {
+    console.log(`${OCRDBG}[Popup] P${idx + 1} genero carregado do OCR:`, {
+      genero: p.genero || '',
+      gender: p.gender || '',
+      sexo: p.sexo || '',
+      sex: p.sex || ''
+    });
+  });
+
   setFormData(passageirosOCR[passageiroSelecionado] || {});
+  logGeneroState('após setFormData');
   renderPassengerTabs();
 
   $('upload-section').classList.add('hidden');
@@ -323,6 +381,7 @@ $('btn-inject').addEventListener('click', async () => {
   if (injectInFlight) return;
 
   persistPassengerSelecionado();
+  console.log(`${OCRDBG}[Popup] btn-inject clicado, persistPassenger finalizado`);
 
   const fieldNome = $('field-nome');
   const fieldSobrenome = $('field-sobrenome');
@@ -349,7 +408,7 @@ $('btn-inject').addEventListener('click', async () => {
   };
 
   const passageirosPayload = passageirosOCR.length > 0
-    ? passageirosOCR
+    ? passageirosOCR.map((p) => normalizePassengerForInjection(p, shouldSendExtra))
     : [{
         nome: `${$('field-nome').value.trim()} ${$('field-sobrenome').value.trim()}`.trim(),
         firstName: $('field-nome').value.trim(),
@@ -366,15 +425,30 @@ $('btn-inject').addEventListener('click', async () => {
         nacionalidade: $('field-nacionalidade') ? $('field-nacionalidade').value : 'Brasil'
       }];
 
-  console.log(`${OCRDBG}[Popup] provider=${activeProvider} passageirosOCR=${passageirosOCR.length} payload=${passageirosPayload.length}`);
+  console.log(`${OCRDBG}[Popup] btn-inject construindo payload: provider=${activeProvider} passageirosOCR.length=${passageirosOCR.length} payload.length=${passageirosPayload.length}`);
   passageirosPayload.forEach((p, idx) => {
-    console.log(`${OCRDBG}[Popup] P${idx + 1}`, {
+    const hasGenero = !!(p.genero || p.gender);
+    console.log(`${OCRDBG}[Popup] P${idx + 1} payload final:`, {
       nome: p.nomeCompleto,
       cpf: p.cpf,
       dataNascimento: p.dataNascimento,
-      genero: p.genero || p.gender || '',
+      genero: p.genero || p.gender || '(vazio)',
+      generoBoolean: hasGenero,
       nacionalidade: p.nacionalidade || p.nationality || ''
     });
+
+    if (!(p.genero || p.gender)) {
+      console.warn(`${OCRDBG}[Popup] ⚠️ P${idx + 1} SEM GENERO NO PAYLOAD FINAL!`, {
+        nome: p.nomeCompleto,
+        passageirosOCR_raw: {
+          genero: passageirosOCR[idx]?.genero,
+          gender: passageirosOCR[idx]?.gender,
+          sexo: passageirosOCR[idx]?.sexo,
+          sex: passageirosOCR[idx]?.sex
+        },
+        fieldValue: idx === passageiroSelecionado ? fieldGenero?.value : '(não é tab ativa)'
+      });
+    }
   });
 
   const signature = JSON.stringify(passageirosPayload);
@@ -467,11 +541,17 @@ function mostrarDados(data) {
   showPassengersData([data]);
 }
 
-['field-nome', 'field-sobrenome', 'field-cpf', 'field-data', 'field-email', 'field-telefone'].forEach((fieldId) => {
+['field-nome', 'field-sobrenome', 'field-cpf', 'field-data', 'field-genero', 'field-nacionalidade', 'field-email', 'field-telefone'].forEach((fieldId) => {
   const input = $(fieldId);
   if (!input) return;
 
   input.addEventListener('input', () => {
+    if (fieldId === 'field-genero' && input.value) {
+      console.log(`${OCRDBG}[Popup] genero input changed:`, {
+        rawValue: input.value,
+        normalized: normalizeGenderValue(input.value)
+      });
+    }
     persistPassengerSelecionado();
     renderPassengerTabs();
   });

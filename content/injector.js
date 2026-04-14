@@ -83,39 +83,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  let responseEnviada = false;
-  
-  const timeout = setTimeout(() => {
-    if (!responseEnviada) {
-      console.warn('[Injector] Timeout ao aguardar resposta da injeção, enviando resposta de fallback');
-      try {
-        sendResponse({ ok: true, timeout: true });
-        responseEnviada = true;
-      } catch (err) {
-        console.warn('[Injector] Falha ao enviar resposta de timeout:', err);
-      }
-    }
-  }, 5000);
+  // Responde imediatamente para evitar erro "message channel closed" em páginas
+  // que re-renderizam ou navegam durante a injeção.
+  sendResponse({ ok: true, accepted: true });
 
   iniciarInjecao(passageiros)
     .then(() => {
-      clearTimeout(timeout);
-      if (!responseEnviada) {
-        sendResponse({ ok: true });
-        responseEnviada = true;
-      }
+      console.log('[Injector] Injeção concluída após ACK imediato.');
     })
     .catch((error) => {
-      clearTimeout(timeout);
       console.error('[Injector] Falha ao iniciar injeção via mensagem:', error);
-      if (!responseEnviada) {
-        sendResponse({ ok: false, error: error?.message || String(error) });
-        responseEnviada = true;
-      }
     });
 
-  // Mantém o canal aberto para a resposta assíncrona acima.
-  return true;
+  // Resposta já enviada, não manter canal aberto.
+  return false;
 });
 
 // ─── MOTOR DE INJEÇÃO MODULAR ────────────────────────────────────────────────

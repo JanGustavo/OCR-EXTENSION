@@ -150,7 +150,9 @@
         accordion.scrollIntoView({ block: 'center', inline: 'nearest' });
         accordion.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         accordion.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await delay(220);
+        // AUMENTADO: 220ms → 350ms para P1, 220ms para outros
+        const delayMs = index === 0 ? 350 : 220;
+        await delay(delayMs);
       }
       return;
     }
@@ -166,7 +168,9 @@
       header.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     }
 
-    await delay(220);
+    // AUMENTADO: 220ms → 350ms para P1, 220ms para outros
+    const delayMs = index === 0 ? 350 : 220;
+    await delay(delayMs);
   }
 
   // ─── Preenchimento de inputs React ────────────────────────────────────────
@@ -232,50 +236,119 @@
   async function closeDropdownForGroup(groupEl) {
     if (!groupEl) return;
     const input = groupEl.querySelector('input[aria-autocomplete="list"], input[aria-label*="Editar"]');
-    if (input) {
+    if (input && input.isConnected) {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await delay(50);
+      // NÃO chamar blur() - causa TypeError no React com removeEventListener
     }
-    await delay(60);
+    await delay(50);
+  }
+
+  function getSelectFieldKind(groupEl) {
+    const fieldType = String(groupEl?.getAttribute('data-test-id') || '').toLowerCase();
+    if (fieldType.includes('nationality')) return 'nationality';
+    if (fieldType.includes('gender')) return 'gender';
+    return 'generic';
+  }
+
+  function getExpectedSelectVariants(fieldKind, targetValue) {
+    const base = normalizeText(targetValue);
+    const variants = new Set([base]);
+
+    if (fieldKind === 'nationality') {
+      if (base.includes('brasil') || base.includes('brazil') || base === 'bra') {
+        variants.add('brasil');
+        variants.add('brazil');
+        variants.add('brasileira');
+        variants.add('brasileiro');
+        variants.add('bra');
+      }
+    }
+
+    if (fieldKind === 'gender') {
+      if (base.includes('masc') || base === 'm' || base === 'male') {
+        variants.add('masculino');
+        variants.add('male');
+        variants.add('m');
+      }
+      if (base.includes('fem') || base === 'f' || base === 'female') {
+        variants.add('feminino');
+        variants.add('female');
+        variants.add('f');
+      }
+    }
+
+    return Array.from(variants);
   }
 
   async function setReactSelectValue(groupEl, targetValue) {
     if (!groupEl || !targetValue) return false;
 
     const control = groupEl.querySelector('.react-select__control');
-    if (!control) return false;
+    const searchInput = groupEl.querySelector('input[aria-controls], input[aria-autocomplete="list"], input[aria-label*="Editar"]');
+    if (!control || !searchInput) return false;
+
+    const fieldKind = getSelectFieldKind(groupEl);
+    const expectedVariants = getExpectedSelectVariants(fieldKind, targetValue);
 
     // Abre o dropdown
     control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    await delay(200);
-
-    const desired = normalizeText(targetValue);
+    control.click();
+    searchInput.focus();
+    searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await delay(220);
 
     // Prioriza o listbox ligado ao input deste grupo; evita pegar opção de outro select.
-    const listboxId = groupEl
-      .querySelector('input[aria-controls]')
-      ?.getAttribute('aria-controls');
+    const listboxId = searchInput.getAttribute('aria-controls');
 
-    let options = [];
-    if (listboxId) {
-      const listbox = document.getElementById(listboxId);
-      if (listbox) {
-        options = Array.from(listbox.querySelectorAll('[role="option"], .react-select__option'));
+    const findOptions = () => {
+      let options = [];
+
+      if (listboxId) {
+        const listbox = document.getElementById(listboxId);
+        if (listbox) {
+          options = Array.from(listbox.querySelectorAll('[role="option"], .react-select__option'));
+        }
       }
-    }
 
-    if (!options.length) {
-      options = Array.from(
-        document.querySelectorAll('.react-select__option, [id*="react-select"][id*="option"]')
-      );
-    }
+      if (!options.length) {
+        const openedMenus = Array.from(document.querySelectorAll('.react-select__menu'));
+        for (const menu of openedMenus) {
+          const opts = Array.from(menu.querySelectorAll('[role="option"], .react-select__option'));
+          if (opts.length) {
+            options = opts;
+            break;
+          }
+        }
+      }
 
-    const match = options.find((opt) =>
-      normalizeText(opt.textContent).includes(desired)
-    );
+      if (!options.length) {
+        options = Array.from(document.querySelectorAll('[role="option"], .react-select__option, [id*="react-select"][id*="option"]'));
+      }
+
+      return options;
+    };
+
+    let match = null;
+    for (let round = 0; round < 4; round++) {
+      const options = findOptions();
+      if (options.length) {
+        match = options.find((opt) => {
+          const text = normalizeText(opt.textContent);
+          return expectedVariants.some((expected) => text.includes(expected) || expected.includes(text));
+        }) || null;
+        if (match) break;
+      } else {
+        console.log(`${OCRDBG}[Azul] setReactSelectValue: Nenhuma opção encontrada para "${targetValue}", tentativa ${round + 1}`);
+      }
+
+      await delay(180);
+    }
 
     if (match) {
       match.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       match.click();
+      await delay(140);
       // Marca o hidden input associado para highlight
       const hiddenInput = groupEl.querySelector('input[type="hidden"]');
       if (hiddenInput) hiddenInput.dataset.ocrFilled = 'true';
@@ -283,30 +356,40 @@
     }
 
     // Fallback: digita no input de busca e confirma com Enter
-    const searchInput = groupEl.querySelector(
-      'input[aria-autocomplete="list"], input[aria-label*="Editar"]'
-    );
-    if (searchInput) {
+    if (searchInput && searchInput.isConnected) {
       setReactValue(searchInput, targetValue);
+      await delay(100);
       searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     }
 
     await closeDropdownForGroup(groupEl);
+    await delay(50);
     return false;
   }
 
   function getSelectedReactSelectText(groupEl) {
     if (!groupEl) return '';
 
-    const hiddenInputValue = String(
-      groupEl.querySelector('input[type="hidden"]')?.value || ''
-    ).trim();
-    if (hiddenInputValue) return hiddenInputValue;
+    // Estratégia 1: Valor do hidden input (mais confiável)
+    const hiddenInput = groupEl.querySelector('input[type="hidden"]');
+    if (hiddenInput && hiddenInput.value) {
+      return String(hiddenInput.value).trim();
+    }
 
-    const singleValueText = String(
-      groupEl.querySelector('.react-select__single-value')?.textContent || ''
-    ).trim();
-    if (singleValueText) return singleValueText;
+    // Estratégia 2: Text content do value container
+    const valueContainer = groupEl.querySelector('.react-select__value-container, .react-select__single-value');
+    if (valueContainer) {
+      const text = String(valueContainer.textContent || '').trim();
+      if (text && text.length > 0 && text !== 'Selecione' && text !== 'Select') {
+        return text;
+      }
+    }
+
+    // Estratégia 3: Text do placeholder ou label
+    const placeholder = groupEl.getAttribute('data-placeholder') || groupEl.getAttribute('aria-label');
+    if (placeholder && placeholder !== 'Selecione') {
+      return String(placeholder).trim();
+    }
 
     return '';
   }
@@ -314,8 +397,11 @@
   function isExpectedSelectValue(groupEl, targetValue) {
     const selected = normalizeText(getSelectedReactSelectText(groupEl));
     const expected = normalizeText(targetValue);
-    if (!selected || !expected) return false;
-    return selected.includes(expected) || expected.includes(selected);
+    if (!expected) return false;
+    // Se nada foi selecionado, considera como não esperado
+    if (!selected) return false;
+    // Compara com lógica mais permissiva: um deve estar contido no outro
+    return selected.includes(expected) || expected.includes(selected) || selected === expected;
   }
 
   async function setReactSelectValueWithRetry(groupEl, targetValue, maxAttempts = 3) {
@@ -336,13 +422,17 @@
       return true;
     }
 
+    // Tentativas com delays maiores para permitir render assíncrono da Azul
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       await setReactSelectValue(groupEl, targetValue);
-      await delay(120 + attempt * 120);
+      // Delays: 360ms, 520ms, 680ms
+      const delayMs = 200 + attempt * 160;
+      await delay(delayMs);
 
       console.log(`${OCRDBG}[Azul] select:attempt`, {
         fieldType,
         attempt,
+        delayMs,
         atual: getSelectedReactSelectText(groupEl)
       });
 
@@ -360,8 +450,9 @@
     const forcedInput = groupEl.querySelector('input[aria-autocomplete="list"], input[aria-label*="Editar"]');
     if (forcedInput) {
       setReactValue(forcedInput, targetValue);
+      await delay(80);
       forcedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      await delay(220);
+      await delay(150);
 
       console.log(`${OCRDBG}[Azul] select:forced-input`, {
         fieldType,
@@ -455,7 +546,7 @@
        * usa o valor; senão, pula silenciosamente.
        */
       const genero = String(
-        passageiro.genero || passageiro.gender || ''
+        passageiro.genero || passageiro.gender || passageiro.sexo || passageiro.sex || ''
       ).trim();
 
       /**
@@ -476,7 +567,13 @@
         cpf,
         dataNascimento,
         genero,
-        nacionalidade
+        nacionalidade,
+        generoRaw: {
+          genero: passageiro?.genero || '',
+          gender: passageiro?.gender || '',
+          sexo: passageiro?.sexo || '',
+          sex: passageiro?.sex || ''
+        }
       });
 
       // ── Campos de texto (paralelos) ──
@@ -501,10 +598,20 @@
       await Promise.allSettled(tarefasTexto);
 
       // Alguns campos (principalmente do 1o passageiro) podem re-renderizar após CPF/data.
-      await delay(450);
+      // AUMENTADO: 450ms → 800ms para P1, 600ms para outros
+      const initialDelayMs = index === 0 ? 800 : 600;
+      await delay(initialDelayMs);
 
       // ── React-Selects (sequenciais para evitar conflito de menus) ──
-      const campoNacionalidade = findField('nationalityGroup', index);
+      let campoNacionalidade = findField('nationalityGroup', index);
+      
+      // Se P1 e não encontrou, aguarda mais um pouco
+      if (!campoNacionalidade && index === 0) {
+        console.warn(`${OCRDBG}[Azul] P1 nationalityGroup não encontrado na primeira tentativa, aguardando mais...`);
+        await delay(400);
+        campoNacionalidade = findField('nationalityGroup', index);
+      }
+      
       if (campoNacionalidade) {
         await setReactSelectValueWithRetry(campoNacionalidade, nacionalidade);
         await delay(150);
@@ -514,13 +621,29 @@
 
       // Só preenche gênero se o valor vier explícito
       if (genero) {
-        const campoGenero = findField('genderGroup', index);
+        let campoGenero = findField('genderGroup', index);
+        if (!campoGenero) {
+          // Se não encontrar, aguarda re-render e tenta novamente
+          console.warn(`${OCRDBG}[Azul] P${index + 1} genderGroup não encontrado na primeira tentativa, aguardando re-render...`);
+          await delay(300);
+          campoGenero = findField('genderGroup', index);
+        }
+        
         if (campoGenero) {
           await setReactSelectValueWithRetry(campoGenero, genero);
-          await delay(150);
+          await delay(100);
         } else {
-          console.warn(`${OCRDBG}[Azul] P${index + 1} genderGroup não encontrado`);
+          console.warn(`${OCRDBG}[Azul] P${index + 1} genderGroup não encontrado após retry`);
         }
+      } else {
+        console.warn(`${OCRDBG}[Azul] P${index + 1} sem genero no payload; campo de genero será ignorado.`, {
+          generoRaw: {
+            genero: passageiro?.genero || '',
+            gender: passageiro?.gender || '',
+            sexo: passageiro?.sexo || '',
+            sex: passageiro?.sex || ''
+          }
+        });
       }
 
       // A Azul pode re-renderizar o card após validações assíncronas (ex.: CPF 403),
@@ -538,7 +661,14 @@
       });
 
       if (genero) {
-        const campoGeneroFinal = findField('genderGroup', index);
+        let campoGeneroFinal = findField('genderGroup', index);
+        
+        // Se não encontrou, tenta buscar novamente (pode estar em re-render)
+        if (!campoGeneroFinal) {
+          await delay(150);
+          campoGeneroFinal = findField('genderGroup', index);
+        }
+        
         if (campoGeneroFinal && !isExpectedSelectValue(campoGeneroFinal, genero)) {
           await setReactSelectValueWithRetry(campoGeneroFinal, genero, 2);
         }
