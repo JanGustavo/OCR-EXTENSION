@@ -90,22 +90,20 @@ async function preprocessImage(base64) {
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
   
-  // Aumentar o contraste (Fator de contraste)
-  const contrast = 75; // Valor entre 0 e 255. 75 dá um bom "boost" nas letras pretas
+  // Aumentar o contraste e binarizar
+  const contrast = 40; 
   const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+  const threshold = 128; // Limiar para binarização
 
   for (let i = 0; i < data.length; i += 4) {
-    // Converter para escala de cinza perceptível
     const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    let color = factor * (lum - 128) + 128;
     
-    // Aplicar o contraste para escurecer as letras e clarear o fundo
-    let newColor = factor * (lum - 128) + 128;
+    // Binarização simples: se for mais escuro que o threshold, vira preto (0), senão branco (255)
+    color = color < threshold ? 0 : 255;
     
-    // Garantir que fica entre 0 e 255
-    newColor = Math.max(0, Math.min(255, newColor));
-    
-    data[i] = data[i + 1] = data[i + 2] = newColor;
-    data[i + 3] = 255; // alpha (opacidade total)W
+    data[i] = data[i + 1] = data[i + 2] = color;
+    data[i + 3] = 255;
   }
 
   ctx.putImageData(imageData, 0, 0);
@@ -119,11 +117,10 @@ async function preprocessImage(base64) {
  */
 function loadImage(base64) {
   return new Promise((resolve, reject) => {
-    const img = document.createElement('img');
+    const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = reject;
-    // Aceita base64 com ou sem prefixo
-    img.src = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
+    img.src = base64.startsWith('data:') ? base64 : `data:image/jpeg;base64,${base64}`;
   });
 }
 
@@ -136,8 +133,6 @@ function loadImage(base64) {
  */
 async function extractText(canvas) {
   const baseOptions = {
-    // MV3: importScripts com chrome-extension:// URLs causa erro
-    // Força usar worker remoto do CDN
     workerBlobURL: false,
     langPath: chrome.runtime.getURL('assets/tesseract/tessdata'),
     corePath: chrome.runtime.getURL('assets/tesseract/tesseract-core.wasm.js'),
@@ -146,38 +141,26 @@ async function extractText(canvas) {
 
   let worker;
   
-  // Estratégia: Tenta CDN PRIMEIRO (mais confiável em MV3), depois fallback para local
   try {
-    console.log('[Offscreen] Tentando worker remoto (CDN)...');
+    // Prioriza local para garantir compatibilidade de versão e offline
+    console.log('[Offscreen] Tentando worker local...');
     worker = await Tesseract.createWorker('por+eng', 1, {
       ...baseOptions,
-      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@v7.0.0/dist/worker.min.js'
+      workerPath: chrome.runtime.getURL('assets/tesseract/worker.min.js')
     });
-    console.log('[Offscreen] Worker remoto criado com sucesso');
-  } catch (cdnErr) {
-    console.warn('[Offscreen] Falha no worker remoto:', cdnErr.message);
-    
-    // Fallback para worker local
-    try {
-      console.log('[Offscreen] Tentando worker local...');
-      worker = await Tesseract.createWorker('por+eng', 1, {
-        ...baseOptions,
-        workerPath: chrome.runtime.getURL('assets/tesseract/worker.min.js')
-      });
-      console.log('[Offscreen] Worker local criado com sucesso');
-    } catch (localErr) {
-      console.error('[Offscreen] Falha no worker local:', localErr.message);
-      throw new Error(`Todos os workers falharam. CDN: ${cdnErr.message}, Local: ${localErr.message}`);
-    }
+  } catch (localErr) {
+    console.warn('[Offscreen] Falha no worker local, tentando CDN...', localErr.message);
+    worker = await Tesseract.createWorker('por+eng', 1, {
+      ...baseOptions,
+      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@v5.1.0/dist/worker.min.js'
+    });
   }
 
-  // 👇 A MAGIA ACONTECE AQUI 👇
   await worker.setParameters({
-    // PSM 11 = Texto esparso (Encontra o máximo de texto possível sem uma ordem rígida)
-    // PSM 6 = Assume um único bloco de texto uniforme (testa qual funciona melhor para ti)
-    tessedit_pageseg_mode: Tesseract.PSM ? Tesseract.PSM.SPARSE_TEXT : '11',
-    // Opcional: Se só precisas de maiúsculas, números e pontuação, podes limitar o alfabeto:
-    // tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/.-: '
+    // PSM 3 = Automático (bom para documentos com cabeçalhos e vários blocos)
+    tessedit_pageseg_mode: '3', 
+    // Whitelist expandida para aceitar acentos brasileiros
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/.-: ÁÉÍÓÚÂÊÔÃÕÇ',
   });
 
   const { data: { text } } = await worker.recognize(canvas);

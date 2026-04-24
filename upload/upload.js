@@ -576,20 +576,38 @@ async function runOCROnImage(imageDataUrl) {
     showStatus('Processando imagem com OCR...', 'success');
     console.log('[Upload] Iniciando OCR...');
 
-    const ocrSource = isBlobUrl(imageDataUrl)
-      ? await imageUrlToCanvas(imageDataUrl)
-      : imageDataUrl;
+    // Pré-processamento simples no Canvas antes do OCR (Sincronizado com offscreen)
+    const img = await loadImageFromUrl(imageDataUrl);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = img.naturalWidth * 2;
+    canvas.height = img.naturalHeight * 2;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    // Recognize: executa OCR na imagem
-    const result = await ocrWorker.recognize(ocrSource);
+    // Aplicar binarização básica para reduzir ruído
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      const color = lum < 128 ? 0 : 255;
+      data[i] = data[i + 1] = data[i + 2] = color;
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    // Configura parâmetros do worker antes do reconhecimento
+    await ocrWorker.setParameters({
+      tessedit_pageseg_mode: '3',
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/.-: ÁÉÍÓÚÂÊÔÃÕÇ',
+    });
+
+    const result = await ocrWorker.recognize(canvas);
     const rawText = result.data.text;
 
-    console.log('[Upload] Texto bruto extraído:', rawText.substring(0, 200) + '...');
+    console.log('[Upload] Texto bruto extraído:', rawText);
     logExtractionContext(rawText);
 
-    // Parse: extrai nome, CPF, data usando as mesmas funções do offscreen
     const parsed = parsePassengerData(rawText);
-
     console.log('[Upload] Dados parseados:', parsed);
 
     if (!parsed.nomeCompleto && !parsed.cpf && !parsed.dataNascimento) {
@@ -619,33 +637,8 @@ function logExtractionContext(rawText) {
 }
 
 /**
- * Copia as funções de parsing do offscreen/offscreen.js
+ * Funções de Parsing Sincronizadas e Melhoradas
  */
-function parsePassengerData(text) {
-  const normalizedText = text
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove marcas diacríticas
-    .toUpperCase();
-
-  const nomeCompleto = extractNome(normalizedText);
-  const nomeSeparado = separateNome(nomeCompleto);
-  const genero = extractGenero(normalizedText);
-  const nacionalidade = extractNacionalidade(normalizedText);
-
-  console.log('[Upload][Parse] genero extraido:', genero || '<vazio>');
-  console.log('[Upload][Parse] nacionalidade extraida:', nacionalidade || '<vazio>');
-
-  return {
-    nomeCompleto: nomeSeparado.nomeCompleto,
-    primeiroNome: nomeSeparado.primeiroNome,
-    sobrenome: nomeSeparado.sobrenome,
-    cpf: extractCPF(normalizedText),
-    dataNascimento: extractDataNascimento(normalizedText),
-    genero,
-    nacionalidade
-  };
-}
-
 function separateNome(nomeCompleto) {
   if (!nomeCompleto || typeof nomeCompleto !== 'string') {
     return { primeiroNome: null, sobrenome: null, nomeCompleto: null };
@@ -667,281 +660,152 @@ function separateNome(nomeCompleto) {
   return { primeiroNome, sobrenome, nomeCompleto };
 }
 
-function sanitizeNomeCandidate(candidate) {
-  if (!candidate) return null;
+function parsePassengerData(text) {
+  const normalizedText = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
 
-  const raw = String(candidate).toUpperCase().replace(/\s+/g, ' ').trim();
-  const institucionalTokens = [
-    'REPUBLICA', 'FEDERATIVA', 'BRASIL', 'GOVERNO', 'FEDERAL', 'ESTADO', 'SECRETARIA',
-    'SEGURANCA', 'DEFESA', 'SOCIAL', 'POLICIA', 'CARTEIRA', 'IDENTIDADE', 'REGISTRO',
-    'GERAL', 'DEPARTAMENTO', 'TRANSITO', 'SSP', 'DETRAN', 'MINISTERIO', 'ORGAO', 'EMISSOR'
+  const nomeCompleto = extractNome(normalizedText);
+  const nomeSeparado = separateNome(nomeCompleto);
+
+  return {
+    nomeCompleto: nomeSeparado.nomeCompleto,
+    primeiroNome: nomeSeparado.primeiroNome,
+    sobrenome: nomeSeparado.sobrenome,
+    cpf: extractCPF(normalizedText),
+    dataNascimento: extractDataNascimento(normalizedText),
+    genero: extractGenero(normalizedText),
+    nacionalidade: extractNacionalidade(normalizedText)
+  };
+}
+
+function sanitizeNomeCandidate(text) {
+  if (!text) return null;
+
+  const raw = String(text).toUpperCase().trim();
+  
+  // Lista de palavras que indicam ruído ou cabeçalho institucional
+  const noiseTokens = [
+    'TOGO', 'TERT', 'ESTADO', 'SECRETARIA', 'SEGURANCA', 'PUBLICA', 'POLICIA', 'CIVIL',
+    'DETRAN', 'BRASIL', 'REPUBLICA', 'GOVERNO', 'FEDERAL', 'MINISTERIO', 'IDENTIDADE', 
+    'CARTEIRA', 'HABILITACAO', 'REGISTRO', 'GERAL', 'ORGAO', 'EMISSOR', 'VIA', 'VALIDO', 
+    'TERRITORIO', 'NACIONAL', 'EMISSAO', 'DATA', 'VALIDADE', 'NASCIMENTO'
   ];
 
-  const institutionalScore = institucionalTokens.reduce((acc, token) => (
-    acc + (new RegExp(`\\b${token}\\b`).test(raw) ? 1 : 0)
-  ), 0);
+  let noiseScore = 0;
+  noiseTokens.forEach(token => {
+    if (new RegExp(`\\b${token}\\b`).test(raw)) noiseScore++;
+  });
 
-  // Evita capturar cabeçalhos como "GOVERNO FEDERAL ESTADO DA PARAIBA"
-  if (institutionalScore >= 2) return null;
+  // Se a linha tem muitas palavras de "documento", não é um nome
+  if (noiseScore >= 2) return null;
 
-  let cleaned = raw
-    .replace(/\b(NOME|NAME|PASSAGEIRO|TITULAR|COMPLETO|NOME\s+SOCIAL|SOCIAL\s+NAME)\b/g, ' ')
-    .replace(/\b(FOTO|PHOTO|FOTOGRAFIA|ASSINATURA)\b.*$/g, '')
-    .replace(/\b(CPF|DATA|NASC(?:IMENTO)?|NATURALIDADE|RG|DOC(?:UMENTO)?|VALIDADE|EMISSAO)\b.*$/g, '')
-    .replace(/[^A-Z\s]/g, ' ')
+  let cleanText = raw
+    .replace(/^[:\s\-]+/, '') // Remove lixo do início da linha (muito comum em OCR)
+    .replace(/[^A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Remove sufixos curtos gerados por OCR (ex: "... MENDONCA LS A").
-  const removableTailTokens = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']);
-  const connectorTokens = new Set(['DA', 'DE', 'DO', 'DAS', 'DOS', 'E']);
+  // Nomes raramente começam com palavras de governo
+  if (/^(ESTADO|SECRETARIA|POLICIA|GOVERNO|FEDERAL|DEPARTAMENTO)\b/.test(cleanText)) return null;
 
-  let wordsForTailCleanup = cleaned.split(' ').filter(Boolean);
-  while (wordsForTailCleanup.length >= 4) {
-    const tail = wordsForTailCleanup[wordsForTailCleanup.length - 1];
-
-    const isSingleLetterNoise = removableTailTokens.has(tail);
-    const isTwoLetterNoise = /^[A-Z]{2}$/.test(tail) && !connectorTokens.has(tail);
-
-    if (!isSingleLetterNoise && !isTwoLetterNoise) break;
-    wordsForTailCleanup.pop();
-  }
-  cleaned = wordsForTailCleanup.join(' ').trim();
-
-  const words = cleaned.split(' ').filter(Boolean);
-  if (words.length < 2 || words.length > 6) return null;
-
-  // Nome precisa ter pelo menos 2 palavras "fortes" (não conectores)
+  const parts = cleanText.split(' ').filter(p => p.length >= 2);
   const connectors = new Set(['DA', 'DE', 'DO', 'DAS', 'DOS', 'E']);
-  const strongWords = words.filter((w) => !connectors.has(w) && w.length >= 2);
-  if (strongWords.length < 2) return null;
+  const strongWords = parts.filter(p => !connectors.has(p));
 
-  return cleaned;
+  // Um nome válido tem pelo menos 2 palavras fortes e tamanho razoável
+  if (strongWords.length < 2 || cleanText.length <= 5) return null;
+  
+  // Nomes em documentos raramente passam de 7 palavras
+  if (parts.length > 7) return null;
+
+  return cleanText;
 }
 
 function extractNome(text) {
-  const patterns = [
-    /(?:NOME(?:\s+COMPLETO)?|NAME|PASSAGEIRO|TITULAR)[:\s]*([A-Z][A-Z\s]{3,90}?)(?=\s+(?:CPF|DATA|NASC|NATURALIDADE|RG|DOC|VALIDADE|EMISSAO)|$)/
-  ];
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(l => l.length > 3);
+  const candidates = [];
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    const candidate = sanitizeNomeCandidate(match?.[1]);
-    if (candidate) return candidate;
-  }
+  // Estratégia 1: Tenta encontrar pelo rótulo "NOME:"
+  const anchorPattern = /(?:NOME|NAME|PASSAGEIRO|TITULAR)[:\s]+([A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]{3,60})(?=\s+(?:CPF|DATA|RG|DOC|VAL|$))/i;
+  const anchorMatch = text.match(anchorPattern);
+  const anchorCandidate = sanitizeNomeCandidate(anchorMatch?.[1]);
+  if (anchorCandidate) return anchorCandidate;
 
-  const lines = text
-    .split(/\n+/)
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
+  // Estratégia 2: Sistema de pontuação para todas as linhas
+  for (const line of lines) {
+    const candidate = sanitizeNomeCandidate(line);
+    if (candidate) {
+      let score = candidate.length;
+      
+      // Linhas que começam com ":" no OCR original costumam ser valores de campos
+      if (line.startsWith(':')) score += 20;
+      
+      // Linhas com 3 ou mais palavras têm score maior (nomes completos)
+      if (candidate.split(' ').length >= 3) score += 10;
 
-  for (let i = 0; i < lines.length; i++) {
-    if (/\b(?:NOME|NAME)\b/.test(lines[i])) {
-      // Prioriza linhas próximas ao marcador "Nome / Name"
-      const nearbyCandidates = [
-        lines[i].replace(/.*\b(?:NOME|NAME)\b[:\s]*/g, ' ').trim(),
-        lines[i + 1] || '',
-        lines[i + 2] || ''
-      ];
-
-      for (const item of nearbyCandidates) {
-        const candidate = sanitizeNomeCandidate(item);
-        if (candidate) return candidate;
-      }
+      candidates.push({ name: candidate, score });
     }
   }
 
-  // Fallback: aceita a primeira linha plausível que não seja institucional
-  for (const line of lines) {
-    const candidate = sanitizeNomeCandidate(line);
-    if (candidate) return candidate;
+  if (candidates.length === 0) return null;
+  
+  // Ordena pelo melhor score e retorna o vencedor
+  candidates.sort((a, b) => b.score - a.score);
+  console.log('[Upload] Candidatos a nome avaliados:', candidates);
+  return candidates[0].name;
+}
+
+function extractCPF(text) {
+  // 1. Tenta CPF (11 dígitos)
+  const cpfMatch = text.match(/\b(\d{3})[.\s]?(\d{3})[.\s]?(\d{3})[-\s]?(\d{2})\b/);
+  if (cpfMatch) return `${cpfMatch[1]}.${cpfMatch[2]}.${cpfMatch[3]}-${cpfMatch[4]}`;
+
+  // 2. Tenta RG como fallback (ex: 17.698.131-7)
+  const rgMatch = text.match(/\b(\d{1,2})[.\s]?(\d{3})[.\s]?(\d{3})[-\s]?([\dX])\b/i);
+  if (rgMatch) return `${rgMatch[1]}.${rgMatch[2]}.${rgMatch[3]}-${rgMatch[4]}`;
+
+  return null;
+}
+
+function extractDataNascimento(text) {
+  const months = {
+    'JAN': '01', 'FEV': '02', 'MAR': '03', 'ABR': '04', 'MAI': '05', 'JUN': '06',
+    'JUL': '07', 'AGO': '08', 'SET': '09', 'OUT': '10', 'NOV': '11', 'DEZ': '12'
+  };
+
+  // DD/MM/AAAA
+  const stdMatch = text.match(/\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/);
+  if (stdMatch) return `${stdMatch[1]}/${stdMatch[2]}/${stdMatch[3]}`;
+
+  // DD/MAR/AAAA
+  const alphaMatch = text.match(/\b(\d{2})[\/\-\.](JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)[\/\-\.](\d{4})\b/i);
+  if (alphaMatch) {
+    const day = alphaMatch[1];
+    const month = months[alphaMatch[2].toUpperCase()];
+    const year = alphaMatch[3];
+    if (month) return `${day}/${month}/${year}`;
   }
 
   return null;
 }
 
-function extractCPF(text) {
-  const match = text.match(/\b(\d{3})[.\s]?(\d{3})[.\s]?(\d{3})[-\s]?(\d{2})\b/);
-  if (!match) return null;
-  return `${match[1]}.${match[2]}.${match[3]}-${match[4]}`;
-}
-
-function extractDataNascimento(text) {
-  const normalized = String(text || '').toUpperCase();
-  const lines = normalized
-    .split(/\n+/)
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-
-  const birthCtx = /\b(NASC(?:IMENTO)?|DATA\s+DE\s+NASCIMENTO|DT\.?\s*NASC|DOB|BORN)\b/;
-  const issueCtx = /\b(EXPEDICAO|DATA\s+DE\s+EXPEDICAO|EMISSAO|DATA\s+DE\s+EMISSAO|VALIDADE|VENCIMENTO|ISSUE)\b/;
-  const dateRegex = /\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/g;
-
-  const normalizeDate = (d, m, y) => `${d}/${m}/${y}`;
-  const getDateFromLine = (line) => {
-    if (!line) return null;
-    const match = line.match(/\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/);
-    if (!match) return null;
-    return normalizeDate(match[1], match[2], match[3]);
-  };
-
-  // 1) Prioridade máxima: data perto do rótulo de nascimento
-  for (let i = 0; i < lines.length; i++) {
-    if (!birthCtx.test(lines[i])) continue;
-
-    const nearby = [lines[i], lines[i + 1] || '', lines[i - 1] || ''];
-    for (const line of nearby) {
-      const date = getDateFromLine(line);
-      if (!date) continue;
-      if (issueCtx.test(line) && !birthCtx.test(line)) continue;
-      return date;
-    }
-  }
-
-  // 2) Fallback com pontuação por contexto
-  const candidates = [];
-  const currentYear = new Date().getFullYear();
-
-  lines.forEach((line, index) => {
-    const matches = Array.from(line.matchAll(dateRegex));
-    matches.forEach((m) => {
-      const dd = m[1];
-      const mm = m[2];
-      const yyyy = m[3];
-      const year = Number.parseInt(yyyy, 10);
-      let score = 0;
-
-      if (birthCtx.test(line)) score += 5;
-      if (issueCtx.test(line)) score -= 6;
-
-      const prev = lines[index - 1] || '';
-      const next = lines[index + 1] || '';
-      if (birthCtx.test(prev) || birthCtx.test(next)) score += 3;
-      if (issueCtx.test(prev) || issueCtx.test(next)) score -= 4;
-
-      if (year > currentYear) score -= 2;
-
-      candidates.push({
-        date: normalizeDate(dd, mm, yyyy),
-        score,
-        year
-      });
-    });
-  });
-
-  if (!candidates.length) return null;
-
-  candidates.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.year - b.year; // em empate, tende a escolher a data mais antiga (mais provável para nascimento)
-  });
-
-  return candidates[0].date;
-}
-
 function extractGenero(text) {
-  const textUpper = String(text || '').toUpperCase();
-  console.log('[Upload][Genero] Iniciando extração...');
+  const textUpper = text.toUpperCase();
+  if (/\b(MASCULINO|MASC|SEXO\s*M)\b/.test(textUpper)) return 'Masculino';
+  if (/\b(FEMININO|FEM|SEXO\s*F)\b/.test(textUpper)) return 'Feminino';
+  
+  // Padrão passaporte M / M ou F / F
+  const passMatch = textUpper.match(/\b(M|F)\s*\/\s*(?:M|F)\b/);
+  if (passMatch) return passMatch[1] === 'M' ? 'Masculino' : 'Feminino';
 
-  const normalizeToken = (value) => String(value || '')
-    .toUpperCase()
-    .replace(/[^A-Z]/g, '');
-
-  const mapGenero = (value) => {
-    const token = normalizeToken(value);
-    if (!token) return '';
-    if (token === 'M' || token.startsWith('MASC')) return 'Masculino';
-    if (token === 'F' || token.startsWith('FEM')) return 'Feminino';
-    return '';
-  };
-
-  const extractFromChunk = (chunk) => {
-    if (!chunk) return '';
-    const match = chunk.match(/\b(MASC(?:ULINO)?|FEM(?:ININO)?|M\b|F\b)\b/);
-    return mapGenero(match?.[1] || '');
-  };
-
-  const matchDireto = textUpper.match(/\b(?:SEXO|SEX|GENERO|GENDER)\b[\s:.-]{0,8}(MASC(?:ULINO)?|FEM(?:ININO)?|M\b|F\b)/);
-  if (matchDireto) {
-    console.log('[Upload][Genero] Match direto:', matchDireto[0]);
-    const mapped = mapGenero(matchDireto[1]);
-    if (mapped) return mapped;
-  }
-  console.log('[Upload][Genero] Match direto: <nao encontrado>');
-
-  const matchPassaporte = textUpper.match(/\b(M|F)\s*\/\s*(?:M|F)\b/);
-  if (matchPassaporte) {
-    console.log('[Upload][Genero] Match passaporte:', matchPassaporte[0]);
-    return matchPassaporte[1] === 'M' ? 'Masculino' : 'Feminino';
-  }
-  console.log('[Upload][Genero] Match passaporte: <nao encontrado>');
-
-  const linhas = textUpper
-    .split(/\n+/)
-    .map((l) => l.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-
-  const labelRegex = /\b(SEXO|SEX|GENERO|GENDER)\b/;
-  const candidatesByLabel = [];
-
-  for (let i = 0; i < linhas.length; i++) {
-    if (!labelRegex.test(linhas[i])) continue;
-
-    const currentTail = linhas[i].replace(/^.*\b(?:SEXO|SEX|GENERO|GENDER)\b[\s:.-]*/g, ' ').trim();
-    const chunks = [currentTail, linhas[i + 1] || '', linhas[i + 2] || ''];
-
-    candidatesByLabel.push({
-      index: i,
-      line: linhas[i],
-      analyzed: chunks
-    });
-
-    for (const chunk of chunks) {
-      const mapped = extractFromChunk(chunk);
-      if (mapped) {
-        console.log('[Upload][Genero] Match por contexto de label:', { linhaLabel: linhas[i], trecho: chunk, genero: mapped });
-        return mapped;
-      }
-    }
-  }
-
-  console.log('[Upload][Genero] Linhas com label (SEXO/GENERO):', candidatesByLabel.length ? candidatesByLabel : ['<nenhuma>']);
-
-  // Fallback: linha curta isolada
-  const shortLineCandidates = linhas.filter((linha) => {
-    const cleaned = linha.replace(/[^A-Z]/g, '');
-    return ['M', 'F', 'MASCULINO', 'FEMININO', 'MASC', 'FEM'].includes(cleaned);
-  });
-  console.log('[Upload][Genero] Linhas curtas candidatas:', shortLineCandidates.length ? shortLineCandidates : ['<nenhuma>']);
-
-  for (const linha of shortLineCandidates) {
-    const mapped = mapGenero(linha);
-    if (mapped) return mapped;
-  }
-
-  console.log('[Upload][Genero] Resultado: <vazio>');
   return '';
 }
 
 function extractNacionalidade(text) {
-  const textUpper = String(text || '').toUpperCase();
-  console.log('[Upload][Nacionalidade] Iniciando extração...');
-
-  const matchDireto = textUpper.match(/\b(?:NACIONALIDADE|NATIONALITY|NACIONALITY|NATURALIDADE)[\s:.-]*([A-Z]{3,24})\b/);
-  if (matchDireto) {
-    console.log('[Upload][Nacionalidade] Match direto:', matchDireto[0]);
-    const nac = matchDireto[1];
-    if (nac.includes('BRASIL') || nac === 'BRA' || nac.startsWith('BRASILEIR')) return 'Brasil';
-    return nac.charAt(0) + nac.slice(1).toLowerCase();
-  }
-  console.log('[Upload][Nacionalidade] Match direto: <nao encontrado>');
-
-  if (/\b(?:BRASILEIRA|BRASILEIRO|BRAZILIAN|BRASIL)\b/.test(textUpper)) {
-    console.log('[Upload][Nacionalidade] Match por palavra-chave Brasil');
-    return 'Brasil';
-  }
-
-  console.log('[Upload][Nacionalidade] Resultado: <vazio>');
+  const textUpper = text.toUpperCase();
+  if (/\b(BRASIL|BRASILEIR|BRAZILIAN|BRA)\b/.test(textUpper)) return 'Brasil';
   return '';
 }
 
