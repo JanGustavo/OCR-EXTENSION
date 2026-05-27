@@ -157,7 +157,8 @@ function normalizePassengerForInjection(data, shouldSendExtra) {
     nacionalidade: String(data?.nacionalidade || data?.nationality || '').trim(),
     nationality: String(data?.nationality || data?.nacionalidade || '').trim(),
     email: shouldSendExtra ? String(data?.email || '').trim() : '',
-    telefone: shouldSendExtra ? String(data?.telefone || '').trim() : ''
+    telefone: shouldSendExtra ? String(data?.telefone || '').trim() : '',
+    documento: String(data?.documento || data?.cpf || '').trim()
   };
 }
 
@@ -422,7 +423,8 @@ $('btn-inject').addEventListener('click', async () => {
         telefone: $('field-telefone') ? $('field-telefone').value.trim() : '',
         // 🔥 Adiciona género e nacionalidade ao fallback
         genero: $('field-genero') ? $('field-genero').value : '',
-        nacionalidade: $('field-nacionalidade') ? $('field-nacionalidade').value : 'Brasil'
+        nacionalidade: $('field-nacionalidade') ? $('field-nacionalidade').value : 'Brasil',
+        documento: $('field-cpf') ? $('field-cpf').value.trim() : ''
       }];
 
   console.log(`${OCRDBG}[Popup] btn-inject construindo payload: provider=${activeProvider} passageirosOCR.length=${passageirosOCR.length} payload.length=${passageirosPayload.length}`);
