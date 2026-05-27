@@ -851,45 +851,43 @@
       <h1 id="page-heading">✈ OCR Passagens</h1>
       <p class="sub">Selecione uma imagem com os dados do passageiro</p>
 
-      <!-- ─── Configurações da IA (Groq) ─── -->
+      <!-- ─── Configurações da IA (Servidor Proxy) ─── -->
       <div class="ai-config-section" id="ai-config-section">
         <div class="ai-config-header" id="ai-config-header">
           <div class="ai-config-title">
-            <span>⚙️ Configurações da IA (Groq)</span>
+            <span>⚙️ Configurações da IA (Proxy)</span>
           </div>
-          <span class="ai-config-badge" id="ai-quota-badge">Cota: 0 / 50</span>
+          <span class="ai-config-badge" id="ai-quota-badge">Cota: 0 / 9</span>
         </div>
         <div class="ai-config-content">
           <div class="ai-config-row">
             <div class="form-group" style="margin-bottom: 0;">
-              <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Groq API Key</label>
-              <div class="input-wrapper-eye">
-                <input
-                  type="password"
-                  id="field-groq-key"
-                  placeholder="gsk_..."
-                  style="width: 100%; padding: 11px 14px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--surface); color: var(--text-primary); font-size: 14px;"
-                />
-                <button type="button" class="eye-btn" id="btn-toggle-key-visibility">👁</button>
-              </div>
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Limite Diário</label>
+              <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">URL do Servidor Proxy</label>
               <input
-                type="number"
-                id="field-groq-limit"
-                value="50"
-                min="1"
-                max="500"
+                type="text"
+                id="field-proxy-url"
+                placeholder="http://localhost:3000"
                 style="width: 100%; padding: 11px 14px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--surface); color: var(--text-primary); font-size: 14px;"
               />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">ID do Usuário / Chave</label>
+              <div class="input-wrapper-eye">
+                <input
+                  type="text"
+                  id="field-user-id"
+                  readonly
+                  style="width: 100%; padding: 11px 40px 11px 14px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--surface); color: var(--text-muted); font-size: 13px; font-family: monospace; cursor: default;"
+                />
+                <button type="button" class="eye-btn" id="btn-copy-user-id" title="Copiar ID de Usuário">📋</button>
+              </div>
             </div>
           </div>
           
           <div class="form-group" style="margin-top: 16px; margin-bottom: 16px;">
             <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted);">
               <span>Uso de cota hoje:</span>
-              <span id="ai-quota-text" style="font-weight: 600;">0 / 50 (0%)</span>
+              <span id="ai-quota-text" style="font-weight: 600;">0 / 9 (0%)</span>
             </div>
             <div class="quota-bar-container">
               <div class="quota-bar-fill" id="ai-quota-fill" style="width: 0%;"></div>

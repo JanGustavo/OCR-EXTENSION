@@ -45,68 +45,77 @@
   const btnChange = document.getElementById('btn-change');
   const btnSelectImage = document.getElementById('btn-select-image');
 
-  // DOM Elements for Groq AI Config
+  // DOM Elements for AI Proxy Config
   const aiConfigSection = document.getElementById('ai-config-section');
   const aiConfigHeader = document.getElementById('ai-config-header');
   const aiQuotaBadge = document.getElementById('ai-quota-badge');
-  const fieldGroqKey = document.getElementById('field-groq-key');
-  const fieldGroqLimit = document.getElementById('field-groq-limit');
+  const fieldProxyUrl = document.getElementById('field-proxy-url');
+  const fieldUserId = document.getElementById('field-user-id');
   const aiQuotaText = document.getElementById('ai-quota-text');
   const aiQuotaFill = document.getElementById('ai-quota-fill');
-  const btnToggleKeyVisibility = document.getElementById('btn-toggle-key-visibility');
+  const btnCopyUserId = document.getElementById('btn-copy-user-id');
   const btnSaveAiConfig = document.getElementById('btn-save-ai-config');
   const btnTestAiConfig = document.getElementById('btn-test-ai-config');
 
   let ocrWorker = null;
 
-  // State variables for Groq AI
-  let groqApiKey = '';
-  let groqDailyLimit = 50;
-  let groqDailyUsage = { date: '', count: 0 };
+  // State variables for AI Proxy
+  let aiProxyUrl = 'http://localhost:3000';
+  let ocrUserUuid = '';
   let aiConfigExpanded = false;
+  let groqDailyLimit = 9;
+  let groqDailyUsage = { date: '', count: 0 };
 
 
-  // ─── Lógica de Configurações da IA e Groq ───
 
-  function getTodayString() {
-    return new Date().toLocaleDateString('sv'); // Swedish format returns YYYY-MM-DD reliably in local time
+  // ─── Lógica de Configurações da IA (Servidor Proxy) ───
+
+  function generateUuid() {
+    // Fallback robusto caso crypto.randomUUID não esteja disponível
+    return crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
   }
 
   function loadAiConfig() {
-    chrome.storage.local.get(['groqApiKey', 'groqDailyLimit', 'groqDailyUsage', 'aiConfigExpanded'], (result) => {
-      groqApiKey = result.groqApiKey || '';
-      groqDailyLimit = Number(result.groqDailyLimit ?? 50);
-      
-      const today = getTodayString();
-      if (result.groqDailyUsage && result.groqDailyUsage.date === today) {
-        groqDailyUsage = result.groqDailyUsage;
-      } else {
-        groqDailyUsage = { date: today, count: 0 };
-        chrome.storage.local.set({ groqDailyUsage });
-      }
-
+    chrome.storage.local.get(['aiProxyUrl', 'ocrUserUuid', 'aiConfigExpanded'], (result) => {
+      aiProxyUrl = result.aiProxyUrl || 'http://localhost:3000';
+      ocrUserUuid = result.ocrUserUuid || '';
       aiConfigExpanded = !!result.aiConfigExpanded;
 
-      // Update UI fields
-      if (fieldGroqKey) fieldGroqKey.value = groqApiKey;
-      if (fieldGroqLimit) fieldGroqLimit.value = groqDailyLimit;
+      if (!ocrUserUuid) {
+        ocrUserUuid = generateUuid();
+        chrome.storage.local.set({ ocrUserUuid });
+      }
+
+      if (fieldProxyUrl) fieldProxyUrl.value = aiProxyUrl;
+      if (fieldUserId) fieldUserId.value = ocrUserUuid;
 
       if (aiConfigSection) {
         aiConfigSection.classList.toggle('expanded', aiConfigExpanded);
       }
 
-      updateQuotaUI();
+      fetchAndUpdateQuota();
     });
   }
 
-  function updateQuotaUI() {
-    const today = getTodayString();
-    if (groqDailyUsage.date !== today) {
-      groqDailyUsage = { date: today, count: 0 };
+  async function fetchAndUpdateQuota() {
+    if (!ocrUserUuid) return;
+    try {
+      const response = await fetch(`${aiProxyUrl}/api/quota/${ocrUserUuid}`);
+      if (!response.ok) throw new Error('Falha ao obter cota do servidor.');
+      const data = await response.json();
+      if (data.ok) {
+        groqDailyLimit = data.limit || 9;
+        groqDailyUsage = { date: data.date, count: data.count };
+        updateQuotaUI(data.count, data.limit);
+      }
+    } catch (err) {
+      console.warn('[Upload] Erro ao sincronizar cota com o proxy:', err.message);
+      // Fallback amigável se o proxy local não estiver de pé ainda
+      updateQuotaUI(0, 9);
     }
+  }
 
-    const count = groqDailyUsage.count;
-    const limit = groqDailyLimit;
+  function updateQuotaUI(count = 0, limit = 9) {
     const pct = Math.min(100, Math.round((count / limit) * 100));
 
     if (aiQuotaBadge) aiQuotaBadge.textContent = `Cota: ${count} / ${limit}`;
@@ -118,38 +127,19 @@
     }
   }
 
-  function checkAndIncrementQuota() {
-    const today = getTodayString();
-    if (groqDailyUsage.date !== today) {
-      groqDailyUsage = { date: today, count: 0 };
-    }
-
-    if (groqDailyUsage.count >= groqDailyLimit) {
-      return false;
-    }
-
-    groqDailyUsage.count += 1;
-    chrome.storage.local.set({ groqDailyUsage });
-    updateQuotaUI();
-    return true;
-  }
-
   function saveAiConfig() {
-    const key = fieldGroqKey ? fieldGroqKey.value.trim() : '';
-    const limit = fieldGroqLimit ? Math.max(1, Number(fieldGroqLimit.value)) : 50;
-
-    groqApiKey = key;
-    groqDailyLimit = limit;
+    const rawUrl = fieldProxyUrl ? fieldProxyUrl.value.trim() : 'http://localhost:3000';
+    // Remove barra invertida final
+    aiProxyUrl = rawUrl.endsWith('/') ? rawUrl.slice(0, -1) : rawUrl;
 
     chrome.storage.local.set({
-      groqApiKey: key,
-      groqDailyLimit: limit
+      aiProxyUrl: aiProxyUrl
     }, () => {
-      updateQuotaUI();
-      showStatus('Configurações salvas com sucesso!', 'success');
+      showStatus('Configurações do proxy salvas!', 'success');
+      fetchAndUpdateQuota();
       setTimeout(() => {
         const el = document.getElementById('upload-status');
-        if (el && el.textContent === 'Configurações salvas com sucesso!') el.style.display = 'none';
+        if (el && el.textContent === 'Configurações do proxy salvas!') el.style.display = 'none';
       }, 3000);
     });
   }
@@ -162,40 +152,50 @@
     chrome.storage.local.set({ aiConfigExpanded });
   }
 
-  function toggleKeyVisibility() {
-    if (!fieldGroqKey || !btnToggleKeyVisibility) return;
-    if (fieldGroqKey.type === 'password') {
-      fieldGroqKey.type = 'text';
-      btnToggleKeyVisibility.textContent = '🙈';
-    } else {
-      fieldGroqKey.type = 'password';
-      btnToggleKeyVisibility.textContent = '👁';
-    }
+  function copyUserId() {
+    if (!ocrUserUuid) return;
+    navigator.clipboard.writeText(ocrUserUuid).then(() => {
+      showStatus('✓ ID de Usuário copiado para a área de transferência!', 'success');
+      setTimeout(() => {
+        const el = document.getElementById('upload-status');
+        if (el && el.textContent.includes('ID de Usuário copiado')) el.style.display = 'none';
+      }, 3000);
+    }).catch(err => {
+      console.error('Falha ao copiar UUID:', err);
+    });
   }
 
   async function testAiConnection() {
-    const tempKey = fieldGroqKey ? fieldGroqKey.value.trim() : '';
-    if (!tempKey) {
-      showStatus('Por favor, insira uma API Key antes de testar.', 'error');
-      return;
-    }
+    const rawUrl = fieldProxyUrl ? fieldProxyUrl.value.trim() : 'http://localhost:3000';
+    const tempUrl = rawUrl.endsWith('/') ? rawUrl.slice(0, -1) : rawUrl;
 
     showSpinner(true);
-    showStatus('Testando conexão com Groq...', 'success');
+    showStatus('Testando conexão com o Servidor Proxy...', 'success');
 
     try {
-      const data = await callGroqChat(
-        tempKey, 
-        "Você é um validador de API. Retorne obrigatoriamente um objeto JSON contendo a chave 'status' com o valor 'ok'.", 
-        "Teste de conexão",
-        false
-      );
+      const response = await fetch(`${tempUrl}/api/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro no servidor proxy (${response.status})`);
+      }
+
+      const resJson = await response.json();
       showSpinner(false);
-      showStatus('✓ Conexão estabelecida com sucesso com o Groq!', 'success');
+      
+      if (resJson.ok && resJson.data?.status === 'ok') {
+        showStatus('✓ Conexão estabelecida com sucesso com o Proxy e Rotação Groq ativa!', 'success');
+      } else {
+        throw new Error('O servidor proxy respondeu, mas o teste com o Groq falhou.');
+      }
     } catch (err) {
       console.error('[Upload] Erro de teste da IA:', err);
       showSpinner(false);
-      showStatus(`Falha de conexão: ${err.message}`, 'error');
+      showStatus(`Falha de conexão com o proxy: ${err.message}`, 'error');
     }
   }
 
@@ -269,81 +269,56 @@
   }
 
   async function callGroqChat(apiKey, systemPrompt, userMessage, isVision = false, base64Image = null, customModelName = null) {
-    const url = 'https://api.groq.com/openai/v1/chat/completions';
+    const url = isVision ? `${aiProxyUrl}/api/ocr-vision` : `${aiProxyUrl}/api/ocr`;
     
-    let model = customModelName;
-    if (!model) {
-      model = isVision ? 'llama-3.2-11b-vision-preview' : 'llama-3.3-70b-versatile';
-    }
-    
-    let content;
-    if (isVision) {
-      content = [
-        {
-          type: "text",
-          text: systemPrompt + "\n" + userMessage
-        },
-        {
-          type: "image_url",
-          image_url: {
-            url: base64Image
-          }
-        }
-      ];
-    } else {
-      content = userMessage;
-    }
-
-    const messages = [];
-    if (!isVision) {
-      messages.push({ role: 'system', content: systemPrompt });
-      messages.push({ role: 'user', content: content });
-    } else {
-      // Groq Vision espera as mensagens de forma simplificada
-      messages.push({ role: 'user', content: content });
-    }
-
     const body = {
-      model: model,
-      messages: messages,
-      temperature: 0.1,
-      response_format: { type: "json_object" }
+      systemPrompt,
+      userMessage,
+      modelName: customModelName
     };
+
+    if (isVision) {
+      body.imageBase64 = base64Image;
+    }
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'X-User-Id': ocrUserUuid
       },
       body: JSON.stringify(body)
     });
+
+    if (response.status === 403) {
+      const errText = await response.text();
+      let msg = "Cota diária de IA excedida. Faça o upgrade para o plano Premium!";
+      try {
+        const parsed = JSON.parse(errText);
+        msg = parsed.error || msg;
+      } catch (e) {}
+      throw new Error(msg);
+    }
 
     if (!response.ok) {
       const errText = await response.text();
       let msg = response.statusText;
       try {
-        const errJson = JSON.parse(errText);
-        msg = errJson.error?.message || msg;
+        const parsed = JSON.parse(errText);
+        msg = parsed.error || msg;
       } catch (e) {}
-      throw new Error(`Erro na API do Groq (${response.status}): ${msg}`);
+      throw new Error(msg);
     }
 
     const resJson = await response.json();
-    const reply = resJson.choices?.[0]?.message?.content;
-    if (!reply) throw new Error("Resposta da IA vazia.");
-    
-    try {
-      return JSON.parse(reply.trim());
-    } catch (e) {
-      console.warn("[Upload] Resposta da IA não é JSON válido:", reply);
-      // Tenta caçar JSON na resposta se houver sujeira
-      const match = reply.match(/\{[\s\S]*\}/);
-      if (match) {
-        return JSON.parse(match[0].trim());
-      }
-      throw e;
+    if (!resJson.ok || !resJson.data) {
+      throw new Error(resJson.error || 'Resposta inválida do servidor proxy.');
     }
+    
+    // Atualiza a cota diária mostrada na interface após a requisição bem sucedida
+    fetchAndUpdateQuota();
+
+    return resJson.data;
   }
 
   function isAiDataValid(data, provider) {
@@ -366,6 +341,7 @@
     
     return Boolean(hasCpf || hasDob);
   }
+
 
   // ─── Lógica de Interface ───
 
@@ -637,14 +613,14 @@
   }
 
   async function runOCROnImage(imageDataUrl, imageBase64) {
-    // 1. Verifica se a chave do Groq está configurada
-    if (!groqApiKey) {
-      console.log('[Upload] Groq API Key não configurada. Usando processamento Tesseract clássico.');
-      showStatus('Groq API Key não configurada. Usando OCR clássico off-line.', 'success');
+    // 1. Verifica se o proxy está configurado
+    if (!aiProxyUrl) {
+      console.log('[Upload] Servidor Proxy não configurado. Usando processamento Tesseract clássico.');
+      showStatus('Servidor Proxy não configurado. Usando OCR clássico off-line.', 'success');
       return runClassicalOCRFlow(imageDataUrl);
     }
 
-    // 2. Tenta rodar o fluxo híbrido (Tesseract + Groq Text)
+    // 2. Tenta rodar o fluxo híbrido (Tesseract + Groq Text via Proxy)
     try {
       // Primeiro, extrai o texto local com Tesseract rápido
       await initOCRWorker();
@@ -665,16 +641,9 @@
       const cleanedText = cleanOcrText(tesseractText);
       console.log('[Upload] Texto limpo para envio ao Groq:\n', cleanedText);
 
-      // Verifica limite de quota antes de chamar
-      if (!checkAndIncrementQuota()) {
-        console.warn('[Upload] Limite de quota diária da IA excedido.');
-        showStatus('Cota diária da IA excedida! Usando OCR clássico off-line.', 'error');
-        return runClassicalOCRFlow(imageDataUrl);
-      }
-
       showStatus('Processando dados com IA (Llama 70B)...', 'success');
       const promptSystem = getAiPrompt(providerKey);
-      const aiResponse = await callGroqChat(groqApiKey, promptSystem, `Texto extraído do documento:\n${cleanedText}`, false);
+      const aiResponse = await callGroqChat(null, promptSystem, `Texto extraído do documento:\n${cleanedText}`, false);
       console.log('[Upload] Resposta da IA (Groq Text):', aiResponse);
 
       // Valida se os dados essenciais estão presentes
@@ -686,6 +655,11 @@
       console.log('[Upload] Dados incompletos via Groq Text. Acionando Fallback Groq Vision...');
     } catch (textErr) {
       console.warn('[Upload] Falha no estágio Groq Text:', textErr.message);
+      // Se for erro de quota diária (403), pula o fallback de visão e vai direto para o clássico
+      if (textErr.message.includes('limite') || textErr.message.includes('cota') || textErr.message.includes('Cota') || textErr.message.includes('403')) {
+        showStatus('Cota diária da IA excedida! Usando OCR clássico off-line.', 'error');
+        return runClassicalOCRFlow(imageDataUrl);
+      }
     }
 
     // 3. Fallback: Groq Vision (tenta múltiplos modelos candidatos)
@@ -700,19 +674,13 @@
 
       for (const candidateModel of visionCandidates) {
         try {
-          if (!checkAndIncrementQuota()) {
-            console.warn('[Upload] Limite de quota excedido no fallback Vision.');
-            showStatus('Cota da IA excedida no fallback! Usando OCR clássico.', 'error');
-            return runClassicalOCRFlow(imageDataUrl);
-          }
-
           console.log(`[Upload] Tentando Groq Vision com o modelo: ${candidateModel}`);
           const displayModelName = candidateModel.includes('/') ? candidateModel.split('/').pop() : candidateModel;
           showStatus(`IA analisando imagem (${displayModelName})...`, 'success');
           
           const promptSystem = getAiPrompt(providerKey);
           const aiVisionResponse = await callGroqChat(
-            groqApiKey,
+            null,
             promptSystem,
             "Aqui está a imagem do documento do passageiro. Extraia os dados solicitados.",
             true,
@@ -728,7 +696,12 @@
           console.warn(`[Upload] Dados inválidos/incompletos retornados pelo modelo ${candidateModel}.`);
         } catch (visionErr) {
           console.error(`[Upload] Falha no fallback Groq Vision com ${candidateModel}:`, visionErr.message);
-          // Continua o loop para tentar o próximo modelo candidato
+          // Se for erro de quota diária (403), interrompe e cai para o OCR clássico
+          if (visionErr.message.includes('limite') || visionErr.message.includes('cota') || visionErr.message.includes('Cota') || visionErr.message.includes('403')) {
+            showStatus('Cota diária da IA excedida! Usando OCR clássico off-line.', 'error');
+            return runClassicalOCRFlow(imageDataUrl);
+          }
+          // Continua o loop para tentar o próximo modelo candidato em caso de outros erros técnicos
         }
       }
     }
@@ -998,7 +971,7 @@
 
     // Listeners das Configurações da IA
     if (aiConfigHeader) aiConfigHeader.addEventListener('click', toggleAiConfigExpand);
-    if (btnToggleKeyVisibility) btnToggleKeyVisibility.addEventListener('click', toggleKeyVisibility);
+    if (btnCopyUserId) btnCopyUserId.addEventListener('click', copyUserId);
     if (btnSaveAiConfig) btnSaveAiConfig.addEventListener('click', saveAiConfig);
     if (btnTestAiConfig) btnTestAiConfig.addEventListener('click', testAiConnection);
   }
